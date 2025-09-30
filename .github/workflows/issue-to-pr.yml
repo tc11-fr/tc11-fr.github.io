@@ -34,13 +34,16 @@ jobs:
           TITRE="$(echo "$BODY" | extract_block '^### - Titre de la page')"
           CONTENU="$(echo "$BODY" | extract_block '^### - Contenu.*')"
           CATEGORIE="$(echo "$BODY" | extract_block '^### - Catégorie')"
+          LABELBOUTON="$(echo "$BODY" | extract_block '^### - Label du bouton.*')"
           # Nettoyer les retours à la ligne en trop
           TITRE="$(echo "$TITRE" | sed '/^\s*$/d')"
           CONTENU="$(echo "$CONTENU" | sed '/^\s*$/d')"
           CATEGORIE="$(echo "$CATEGORIE" | sed '/^\s*$/d')"
+          LABELBOUTON="$(echo "$LABELBOUTON" | sed '/^\s*$/d')"
           echo "Titre : $TITRE"
           echo "Contenu : $CONTENU"
           echo "Catégorie : $CATEGORIE"
+          echo "Label du bouton : $LABELBOUTON"
           # Générer la date courante au format yyyy-mm-dd
           DATE="$(date +%F)"
           # Générer le nom du dossier et du fichier
@@ -54,6 +57,7 @@ jobs:
           category: "$CATEGORIE"
           date: "$DATE"
           layout: layouts/post.html
+          labelDetails: "$LABELBOUTON"
           ---
           $CONTENU
           EOF
