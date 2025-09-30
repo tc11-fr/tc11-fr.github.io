@@ -5,11 +5,6 @@ layout: layouts/post.html
 cover: ./interclubs-cover.jpg
 category: Compétitions
 date: 2025-08-09
-gallery:
-  - title: super
-    url: ./interclubs-cover.jpg
-  - title: ouais
-    url: ./interclubs-action.jpg
 ---
 
 Un grand bravo à **l’équipe 1** qui s’impose **4-2** ce week-end lors de la rencontre d’interclubs !  

@@ -2,18 +2,9 @@
 title: Assemblée Générale TC11 du 7 décembre – Documents & infos
 description: Documents à consulter pour l’AG du 7 décembre, renouvellement du CA, et moment convivial au Nouveau Carillon.
 layout: layouts/post.html
-cover: ./terrebattue.png
 category: Club
 date: 2024-12-06
 labelDetails: En savoir plus →
-attachments:
-  - title: Bon pour pouvoir
-    url: ./bon-pour-pouvoir.pdf
-gallery:
-  - title: terre battue
-    url: ./terrebattue.png
-  - title: test
-    url: /assets/news/interclubs-action.jpg
 ---
 
 Chères adhérentes, chers adhérents,

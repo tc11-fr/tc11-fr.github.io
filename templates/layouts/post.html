@@ -2,14 +2,13 @@
 layout: main
 attachments: []
 gallery: []
-cover: /assets/hero-banner.jpg
 labelDetails: Voir le détail →
 ---
 
 <!-- Hero article (extrait d'inter-clubs.html) -->
 <section class="relative overflow-hidden">
   <div class="absolute inset-0">
-    <img src="{page.data.cover ?: '/assets/hero-banner.jpg'}" alt="{page.title}" class="w-full h-60 md:h-80 object-cover" />
+    <img src="{page.data.cover ?: files:firstImage(page) ?: '/assets/hero-banner.jpg'}" alt="{page.title}" class="w-full h-60 md:h-80 object-cover" />
     <div class="absolute inset-0 bg-gradient-to-b from-black/30 via-black/40 to-black/60"></div>
   </div>
   <div class="relative max-w-6xl mx-auto px-4 py-10 md:py-16 text-white">
@@ -35,24 +34,29 @@ labelDetails: Voir le détail →
 
 <section id="post-content" class="max-w-6xl mx-auto px-4 py-12 prose prose-slate">
   {#insert /}
-  {#if page.data.attachments.size > 0}
-    <h2>Documents à télécharger</h2>
-    <ul>
-      {#for file in page.data.attachments}
-        <li>
-          <a href="{file.url}" target="_blank">{file.title}</a>
-        </li>
-      {/for}
-    </ul>
-  {/if}
 
-  {#if page.data.gallery.size > 0}
+
+
+{#if files:hasAttachments(page)}
+  <h2>Documents à télécharger</h2>
+  <ul>
+    {#for file in files:attachments(page) }
+        {#if file.endsWith('.pdf') or file.endsWith('.docx') or file.endsWith('.xlsx') or file.endsWith('.pptx') or file.endsWith('.zip') or file.endsWith('.rar') or file.endsWith('.txt') or file.endsWith('.csv') or file.endsWith('.odt') or file.endsWith('.ods') or file.endsWith('.odp') }
+      <li>
+        <a href="{file}" target="_blank">{file}</a>
+      </li>
+      {/if}
+    {/for}
+  </ul>
+{/if}
+
+{#if files:hasImages(page)}
     <!-- Galerie d'images -->
     <div 
       x-data="\{
         gallery: [
-          {#for img in page.data.gallery}
-            \{src: '{img.url}', alt: '{img.title}' \}{#if !img_isLast},{/if}
+          {#for img in files:images(page)}
+            \{src: '{img}', alt: '{img.displayName}' \}{#if !img_isLast},{/if}
           {/for}
         ],
         showLightbox: false,
