@@ -23,7 +23,7 @@ jobs:
               $0 ~ header {
                 getline
                 block = ""
-                while (getline && $0 !~ /^### /) {
+                while (getline && $0 !~ /^### - /) {
                   block = block $0 "\n"
                 }
                 print block
@@ -31,9 +31,9 @@ jobs:
               }
             '
           }
-          TITRE="$(echo "$BODY" | extract_block '^### Titre de la page')"
-          CONTENU="$(echo "$BODY" | extract_block '^### Contenu.*')"
-          CATEGORIE="$(echo "$BODY" | extract_block '^### Catégorie')"
+          TITRE="$(echo "$BODY" | extract_block '^### - Titre de la page')"
+          CONTENU="$(echo "$BODY" | extract_block '^### - Contenu.*')"
+          CATEGORIE="$(echo "$BODY" | extract_block '^### - Catégorie')"
           # Nettoyer les retours à la ligne en trop
           TITRE="$(echo "$TITRE" | sed '/^\s*$/d')"
           CONTENU="$(echo "$CONTENU" | sed '/^\s*$/d')"

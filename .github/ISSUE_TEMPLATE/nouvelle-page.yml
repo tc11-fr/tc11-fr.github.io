@@ -6,21 +6,21 @@ body:
   - type: input
     id: titre
     attributes:
-      label: Titre de la page
+      label: - Titre de la page
       placeholder: "Exemple : Résultats Interclubs 2025"
     validations:
       required: true
   - type: textarea
     id: contenu
     attributes:
-      label: Contenu (Markdown accepté)
+      label: - Contenu
       placeholder: "Rédigez ici le texte de la page ou de l’actualité…"
     validations:
       required: true
   - type: dropdown
     id: categorie
     attributes:
-      label: Catégorie
+      label: - Catégorie
       options:
         - Compétitions
         - Club
@@ -33,13 +33,13 @@ body:
   - type: input
     id: date
     attributes:
-      label: Date de publication
+      label: - Date de publication
       description: "Laissez vide pour utiliser la date du jour, ou indiquez une date précise au format AAAA-MM-JJ (exemple : 2025-08-12)"
       placeholder: "2025-08-12"
   - type: dropdown
     id: lienTexte
     attributes:
-      label: Label du bouton (pour accéder à la page)
+      label: - Label du bouton (pour accéder à la page)
       options:
         - Voir le détail →
         - En savoir plus →
