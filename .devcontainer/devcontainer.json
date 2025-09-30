@@ -1,5 +1,4 @@
 {
     "image": "mcr.microsoft.com/devcontainers/universal:2",
-    "postStartCommand": "mvn quarkus:dev",
     "forwardPorts": [8080]
 }
