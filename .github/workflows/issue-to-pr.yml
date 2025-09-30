@@ -43,9 +43,10 @@ jobs:
           echo "Catégorie : $CATEGORIE"
           # Générer la date courante au format yyyy-mm-dd
           DATE="$(date +%F)"
-          # Générer le nom du fichier
-          FILENAME="content/posts/$DATE-$(echo "$TITRE" | tr ' ' '-' | tr '[:upper:]' '[:lower:]').md"
-          mkdir -p content/posts
+          # Générer le nom du dossier et du fichier
+          FOLDERNAME="content/posts/$DATE"-$(echo "$TITRE" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+          FILENAME="$FOLDERNAME/index.md"
+          mkdir -p "$FOLDERNAME"
           # Générer le front matter et le contenu
           cat > "$FILENAME" <<EOF
           ---

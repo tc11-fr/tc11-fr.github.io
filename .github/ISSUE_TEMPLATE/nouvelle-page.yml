@@ -55,17 +55,6 @@ body:
         - Voir les photos →
     validations:
       required: true
-  - type: textarea
-    id: fichiers
-    attributes:
-      label: Fichiers à télécharger
-      description: |
-        Collez ici les fichiers à joindre (PDF, doc, etc.), et décrivez leur contenu (texte entre crochets).
-  - type: textarea
-    id: galerie
-    attributes:
-      label: Photos de la galerie de l’actu
-      description: |
-        Collez ici les images à afficher dans la galerie, et décrivez les photos ajoutées (texte entre crochets).
+
 
 
