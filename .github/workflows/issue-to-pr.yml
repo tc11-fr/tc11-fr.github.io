@@ -4,6 +4,10 @@ on:
   issues:
     types: [opened, edited]
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   issue-to-pr:
     if: contains(join(github.event.issue.labels.*.name, ','), 'contenu')
@@ -16,8 +20,7 @@ jobs:
         run: |
           TITLE="$(jq -r '.issue.title' "$GITHUB_EVENT_PATH" | sed 's/^\[Page\] //')"
           BODY="$(jq -r '.issue.body' "$GITHUB_EVENT_PATH")"
-          echo "BODY:"
-          echo "$BODY"
+
           extract_block() {
             awk -v header="$1" '
               $0 ~ header {
@@ -31,26 +34,25 @@ jobs:
               }
             '
           }
+
           TITRE="$(echo "$BODY" | extract_block '^### - Titre de la page')"
           CONTENU="$(echo "$BODY" | extract_block '^### - Contenu.*')"
           CATEGORIE="$(echo "$BODY" | extract_block '^### - Catégorie')"
           LABELBOUTON="$(echo "$BODY" | extract_block '^### - Label du bouton.*')"
-          # Nettoyer les retours à la ligne en trop
+
+          # Nettoyage
           TITRE="$(echo "$TITRE" | sed '/^\s*$/d')"
           CONTENU="$(echo "$CONTENU" | sed '/^\s*$/d')"
           CATEGORIE="$(echo "$CATEGORIE" | sed '/^\s*$/d')"
           LABELBOUTON="$(echo "$LABELBOUTON" | sed '/^\s*$/d')"
-          echo "Titre : $TITRE"
-          echo "Contenu : $CONTENU"
-          echo "Catégorie : $CATEGORIE"
-          echo "Label du bouton : $LABELBOUTON"
-          # Générer la date courante au format yyyy-mm-dd
+
           DATE="$(date +%F)"
-          # Générer le nom du dossier et du fichier
-          FOLDERNAME="content/posts/$DATE"-$(echo "$TITRE" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+          SLUG="$(echo "$TITRE" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
+          FOLDERNAME="content/posts/$DATE-$SLUG"
           FILENAME="$FOLDERNAME/index.md"
+
           mkdir -p "$FOLDERNAME"
-          # Générer le front matter et le contenu
+
           cat > "$FILENAME" <<EOF
           ---
           title: "$TITRE"
@@ -61,11 +63,31 @@ jobs:
           ---
           $CONTENU
           EOF
+
+          # Expose des outputs pour les étapes suivantes
+          BRANCH="issue-page-${{ github.event.issue.number }}"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "folder_path=$FOLDERNAME" >> "$GITHUB_OUTPUT"
+          echo "file_path=$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "folder_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/$BRANCH/$FOLDERNAME" >> "$GITHUB_OUTPUT"
+          echo "file_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/$BRANCH/$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "upload_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/upload/$BRANCH/$FOLDERNAME" >> "$GITHUB_OUTPUT"
+
       - name: Créer la Pull Request
+        id: cpr
         uses: peter-evans/create-pull-request@v6
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Ajout d’une page depuis une issue"
-          branch: issue-page-${{ github.event.issue.number }}
+          branch: ${{ steps.generate.outputs.branch }}
           title: "Ajout d’une page : ${{ github.event.issue.title }}"
-          body: "Page générée automatiquement depuis l’issue #${{ github.event.issue.number }}."
-          add-paths: content/posts/*.md
+          add-paths: content/posts/**/*.md
+          body: |
+            Page générée automatiquement depuis l’issue #${{ github.event.issue.number }}.
+
+            **Dossier du post :** [`${{ steps.generate.outputs.folder_path }}`](${{ steps.generate.outputs.folder_url }})  
+            **Fichier :** [`index.md`](${{ steps.generate.outputs.file_url }})
+
+            **Ajouter des images / pièces jointes :**  
+            ➜ [Uploader des fichiers dans ce dossier](${{ steps.generate.outputs.upload_url }})  
+
