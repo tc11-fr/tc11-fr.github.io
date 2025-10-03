@@ -8,6 +8,10 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: preview-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   issue-to-pr:
     if: contains(join(github.event.issue.labels.*.name, ','), 'contenu')
@@ -20,7 +24,6 @@ jobs:
         run: |
           TITLE="$(jq -r '.issue.title' "$GITHUB_EVENT_PATH" | sed 's/^\[Page\] //')"
           BODY="$(jq -r '.issue.body' "$GITHUB_EVENT_PATH")"
-
           extract_block() {
             awk -v header="$1" '
               $0 ~ header {
@@ -34,23 +37,15 @@ jobs:
               }
             '
           }
-
-          TITRE="$(echo "$BODY" | extract_block '^### - Titre de la page')"
-          CONTENU="$(echo "$BODY" | extract_block '^### - Contenu.*')"
-          CATEGORIE="$(echo "$BODY" | extract_block '^### - Catégorie')"
-          LABELBOUTON="$(echo "$BODY" | extract_block '^### - Label du bouton.*')"
-
-          # Nettoyage
-          TITRE="$(echo "$TITRE" | sed '/^\s*$/d')"
-          CONTENU="$(echo "$CONTENU" | sed '/^\s*$/d')"
-          CATEGORIE="$(echo "$CATEGORIE" | sed '/^\s*$/d')"
-          LABELBOUTON="$(echo "$LABELBOUTON" | sed '/^\s*$/d')"
+          TITRE="$(echo "$BODY" | extract_block '^### - Titre de la page' | sed '/^\s*$/d')"
+          CONTENU="$(echo "$BODY" | extract_block '^### - Contenu.*' | sed '/^\s*$/d')"
+          CATEGORIE="$(echo "$BODY" | extract_block '^### - Catégorie' | sed '/^\s*$/d')"
+          LABELBOUTON="$(echo "$BODY" | extract_block '^### - Label du bouton.*' | sed '/^\s*$/d')"
 
           DATE="$(date +%F)"
           SLUG="$(echo "$TITRE" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
           FOLDERNAME="content/posts/$DATE-$SLUG"
           FILENAME="$FOLDERNAME/index.md"
-
           mkdir -p "$FOLDERNAME"
           cat > "$FILENAME" <<EOF
           ---
@@ -63,7 +58,6 @@ jobs:
           $CONTENU
           EOF
 
-          # Outputs pour la suite
           BRANCH="issue-page-${{ github.event.issue.number }}"
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
           echo "folder_path=$FOLDERNAME" >> "$GITHUB_OUTPUT"
@@ -87,11 +81,10 @@ jobs:
             **Dossier du post :** [`${{ steps.generate.outputs.folder_path }}`](${{ steps.generate.outputs.folder_url }})  
             **Fichier :** [`index.md`](${{ steps.generate.outputs.file_url }})
 
-            **Ajouter des images / pièces jointes :**  
-            ➜ [Déposer des fichiers dans ce dossier](${{ steps.generate.outputs.upload_url }})  
-            _(Roq les détecte automatiquement.)_
+            **Ajouter des images / pièces jointes (Roq les détecte automatiquement) :**  
+            ➜ [Déposer des fichiers dans ce dossier](${{ steps.generate.outputs.upload_url }})
 
-      # -------- Deploy & comment just after PR creation --------
+      # -------- Build & Deploy après création/MAJ PR --------
 
       - name: Définir PR_NUMBER
         if: ${{ steps.cpr.outputs.pull-request-number != '' }}
@@ -103,13 +96,28 @@ jobs:
         with:
           ref: ${{ steps.generate.outputs.branch }}
 
-      - name: Set up JDK 21
+      - name: Set up JDK 21 (cache Maven)
         if: ${{ env.PR_NUMBER != '' }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
+
+      # (Optionnel) Prime le cache pour des builds très rapides ensuite
+      - name: Prime Maven cache (go-offline)
+        if: ${{ env.PR_NUMBER != '' }}
+        run: ./mvnw -B -q -DskipTests dependency:go-offline
+
+      # (Optionnel) Cache npm global pour l'install de surge
+      - name: Cache npm (global)
+        if: ${{ env.PR_NUMBER != '' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-global-v1
+          restore-keys: |
+            ${{ runner.os }}-npm-global-
 
       - name: Setup Node.js
         if: ${{ env.PR_NUMBER != '' }}
@@ -121,9 +129,22 @@ jobs:
         if: ${{ env.PR_NUMBER != '' }}
         run: npm install -g surge
 
-      - name: Build Roq site
+      # Choisis l’une des deux lignes suivantes selon ton besoin :
+      # (A) Génération directe du site (plus rapide si ton plugin le supporte)
+      # - name: Build Roq site (generate-only)
+      #   if: ${{ env.PR_NUMBER != '' }}
+      #   run: QUARKUS_ROQ_GENERATOR_BATCH=true ./mvnw -B -q -DskipTests -Dspotless.skip=true -Dcheckstyle.skip=true quarkus:roq-generate-site
+
+      # (B) Build “package + run” (moins rapide)
+      - name: Build Roq site (package + run)
         if: ${{ env.PR_NUMBER != '' }}
-        run: QUARKUS_ROQ_GENERATOR_BATCH=true ./mvnw -B -q package quarkus:run
+        run: |
+          QUARKUS_ROQ_GENERATOR_BATCH=true \
+          ./mvnw -B -q \
+            -DskipTests -DskipITs \
+            -Dmaven.javadoc.skip=true \
+            -Dspotless.skip=true -Dcheckstyle.skip=true \
+            package quarkus:run
 
       - name: Deploy to Surge
         if: ${{ env.PR_NUMBER != '' }}
@@ -131,6 +152,7 @@ jobs:
           SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}
         run: |
           export DEPLOY_DOMAIN=https://pr-${{ env.PR_NUMBER }}-roq-preview.surge.sh
+          # adapte le dossier si tu utilises la génération "A"
           surge ./target/roq --domain $DEPLOY_DOMAIN --token $SURGE_TOKEN
           echo "DEPLOY_DOMAIN=$DEPLOY_DOMAIN" >> $GITHUB_ENV
 
@@ -140,10 +162,10 @@ jobs:
         with:
           script: |
             const prNumber = Number(process.env.PR_NUMBER);
-            const url = process.env.DEPLOY_DOMAIN;
+            const url = process.env.DEPLOY_DOMAIN || 'preview non disponible';
             await github.rest.issues.createComment({
               issue_number: prNumber,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `🚀 Preview Roq (créé automatiquement) : [${url}](${url})`
+              body: `🚀 Preview Roq : [${url}](${url})`
             });
