@@ -3,12 +3,10 @@ name: Roq Site Preview PR
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  workflow_run:
-    workflows: ["Issue to Markdown PR"]
-    types: [completed]
+  repository_dispatch:
+    types: [roq-preview]
 
 permissions:
-  actions: read
   contents: read
   pull-requests: write
 
@@ -18,49 +16,28 @@ concurrency:
 
 jobs:
   preview:
-    # si déclenché par workflow_run, on ne continue que si le workflow A a réussi
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
-      # --- Cas workflow_run : essayer de récupérer l'artifact, mais ne pas échouer si absent ---
-      - name: Download PR number artifact (workflow_run)
-        if: ${{ github.event_name == 'workflow_run' }}
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: pr-number
-          run-id: ${{ github.event.workflow_run.id }}
-          path: ./_tmp_pr
-
       - name: Resolve PR number
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
-          else
-            if [ -f ./_tmp_pr/pr-number.txt ]; then
-              PR=$(tr -d ' \n' < ./_tmp_pr/pr-number.txt)
-              echo "PR_NUMBER=$PR" >> $GITHUB_ENV
-            else
-              echo "No pr-number artifact found."
-              echo "PR_NUMBER=" >> $GITHUB_ENV
-            fi
-          fi
+          echo "PR_NUMBER=${{ github.event.pull_request.number || github.event.client_payload.pr }}" >> $GITHUB_ENV
+          echo "Resolved PR_NUMBER=$PR_NUMBER"
 
       - name: Stop if PR number is missing
         if: ${{ env.PR_NUMBER == '' }}
         run: |
-          echo "No PR number to preview (likely no PR was created). Exiting."
+          echo "No PR number found (nothing to preview). Exiting."
           exit 0
 
-      # Checkout toujours sur le merge-ref de la PR
+      # Toujours builder sur le merge-ref de la PR
       - name: Checkout PR (merge ref)
         uses: actions/checkout@v4
         with:
           ref: refs/pull/${{ env.PR_NUMBER }}/merge
 
-      - name: Set up JDK 21
+      - name: Set up JDK 21 (cache Maven)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
