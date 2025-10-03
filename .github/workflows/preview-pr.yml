@@ -8,7 +8,7 @@ on:
     types: [completed]
 
 permissions:
-  actions: read           # nécessaire pour télécharger l'artifact du workflow A
+  actions: read
   contents: read
   pull-requests: write
 
@@ -18,35 +18,40 @@ concurrency:
 
 jobs:
   preview:
-    # Si déclenché par workflow_run, on ne part que si le workflow A a réussi
+    # si déclenché par workflow_run, on ne continue que si le workflow A a réussi
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
-      # --- Cas workflow_run: récupérer le PR number déposé par le workflow A ---
+      # --- Cas workflow_run : essayer de récupérer l'artifact, mais ne pas échouer si absent ---
       - name: Download PR number artifact (workflow_run)
         if: ${{ github.event_name == 'workflow_run' }}
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: pr-number
           run-id: ${{ github.event.workflow_run.id }}
           path: ./_tmp_pr
 
       - name: Resolve PR number
+        shell: bash
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
           else
             if [ -f ./_tmp_pr/pr-number.txt ]; then
-              PR=$(cat ./_tmp_pr/pr-number.txt | tr -d ' \n')
+              PR=$(tr -d ' \n' < ./_tmp_pr/pr-number.txt)
               echo "PR_NUMBER=$PR" >> $GITHUB_ENV
+            else
+              echo "No pr-number artifact found."
+              echo "PR_NUMBER=" >> $GITHUB_ENV
             fi
           fi
 
       - name: Stop if PR number is missing
         if: ${{ env.PR_NUMBER == '' }}
         run: |
-          echo "No PR number found (nothing to preview). Exiting gracefully."
+          echo "No PR number to preview (likely no PR was created). Exiting."
           exit 0
 
       # Checkout toujours sur le merge-ref de la PR
@@ -62,7 +67,6 @@ jobs:
           java-version: '21'
           cache: maven
 
-      # (optionnel mais conseillé) pré-chauffe les deps Maven
       - name: Prime Maven cache (go-offline)
         run: ./mvnw -B -q -DskipTests dependency:go-offline
 

@@ -24,7 +24,6 @@ jobs:
         run: |
           TITLE="$(jq -r '.issue.title' "$GITHUB_EVENT_PATH" | sed 's/^\[Page\] //')"
           BODY="$(jq -r '.issue.body' "$GITHUB_EVENT_PATH")"
-
           extract_block() {
             awk -v header="$1" '
               $0 ~ header {
@@ -38,7 +37,6 @@ jobs:
               }
             '
           }
-
           TITRE="$(echo "$BODY" | extract_block '^### - Titre de la page' | sed '/^\s*$/d')"
           CONTENU="$(echo "$BODY" | extract_block '^### - Contenu.*' | sed '/^\s*$/d')"
           CATEGORIE="$(echo "$BODY" | extract_block '^### - Catégorie' | sed '/^\s*$/d')"
@@ -49,7 +47,6 @@ jobs:
           FOLDERNAME="content/posts/$DATE-$SLUG"
           FILENAME="$FOLDERNAME/index.md"
           mkdir -p "$FOLDERNAME"
-
           cat > "$FILENAME" <<EOF
           ---
           title: "$TITRE"
