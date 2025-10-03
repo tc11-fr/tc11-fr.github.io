@@ -3,29 +3,54 @@ name: Roq Site Preview PR
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  repository_dispatch:
-    types: [roq-preview]
+  workflow_run:
+    workflows: ["Issue to Markdown PR"]
+    types: [completed]
 
 permissions:
+  actions: read           # nécessaire pour télécharger l'artifact du workflow A
   contents: read
   pull-requests: write
 
+concurrency:
+  group: roq-preview-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   preview:
+    # Si déclenché par workflow_run, on ne part que si le workflow A a réussi
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
+      # --- Cas workflow_run: récupérer le PR number déposé par le workflow A ---
+      - name: Download PR number artifact (workflow_run)
+        if: ${{ github.event_name == 'workflow_run' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-number
+          run-id: ${{ github.event.workflow_run.id }}
+          path: ./_tmp_pr
+
       - name: Resolve PR number
-        run: echo "PR_NUMBER=${{ github.event.pull_request.number || github.event.client_payload.pr }}" >> $GITHUB_ENV
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          else
+            if [ -f ./_tmp_pr/pr-number.txt ]; then
+              PR=$(cat ./_tmp_pr/pr-number.txt | tr -d ' \n')
+              echo "PR_NUMBER=$PR" >> $GITHUB_ENV
+            fi
+          fi
 
-      # Checkout PR (cas pull_request)
-      - name: Checkout (pull_request)
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/checkout@v4
+      - name: Stop if PR number is missing
+        if: ${{ env.PR_NUMBER == '' }}
+        run: |
+          echo "No PR number found (nothing to preview). Exiting gracefully."
+          exit 0
 
-      # Checkout PR (cas repository_dispatch)
-      - name: Checkout (repository_dispatch)
-        if: ${{ github.event_name == 'repository_dispatch' }}
+      # Checkout toujours sur le merge-ref de la PR
+      - name: Checkout PR (merge ref)
         uses: actions/checkout@v4
         with:
           ref: refs/pull/${{ env.PR_NUMBER }}/merge
@@ -36,6 +61,10 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+
+      # (optionnel mais conseillé) pré-chauffe les deps Maven
+      - name: Prime Maven cache (go-offline)
+        run: ./mvnw -B -q -DskipTests dependency:go-offline
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
