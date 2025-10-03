@@ -84,7 +84,7 @@ jobs:
             **Ajouter des images / pièces jointes (Roq les détecte automatiquement) :**  
             ➜ [Déposer des fichiers dans ce dossier](${{ steps.generate.outputs.upload_url }})
 
-      # --- Déclencher le preview downstream sans artifact ---
+      # --- Déclencher le preview downstream via repository_dispatch ---
       - name: Trigger preview via repository_dispatch
         if: ${{ steps.cpr.outputs.pull-request-number != '' }}
         uses: actions/github-script@v7
@@ -92,7 +92,8 @@ jobs:
           PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
         with:
           script: |
-            await github.repos.createDispatch({
+            core.info(`Dispatching preview for PR #${process.env.PR_NUMBER}`);
+            await github.rest.repos.createDispatchEvent({
               owner: context.repo.owner,
               repo: context.repo.repo,
               event_type: 'roq-preview',

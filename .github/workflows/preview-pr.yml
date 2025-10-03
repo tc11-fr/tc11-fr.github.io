@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           echo "PR_NUMBER=${{ github.event.pull_request.number || github.event.client_payload.pr }}" >> $GITHUB_ENV
-          echo "Resolved PR_NUMBER=$PR_NUMBER"
+          echo "Resolved PR_NUMBER=${{ github.event.pull_request.number || github.event.client_payload.pr }}"
 
       - name: Stop if PR number is missing
         if: ${{ env.PR_NUMBER == '' }}
