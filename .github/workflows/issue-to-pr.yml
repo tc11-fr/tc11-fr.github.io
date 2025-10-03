@@ -24,6 +24,7 @@ jobs:
         run: |
           TITLE="$(jq -r '.issue.title' "$GITHUB_EVENT_PATH" | sed 's/^\[Page\] //')"
           BODY="$(jq -r '.issue.body' "$GITHUB_EVENT_PATH")"
+
           extract_block() {
             awk -v header="$1" '
               $0 ~ header {
@@ -37,6 +38,7 @@ jobs:
               }
             '
           }
+
           TITRE="$(echo "$BODY" | extract_block '^### - Titre de la page' | sed '/^\s*$/d')"
           CONTENU="$(echo "$BODY" | extract_block '^### - Contenu.*' | sed '/^\s*$/d')"
           CATEGORIE="$(echo "$BODY" | extract_block '^### - Catégorie' | sed '/^\s*$/d')"
@@ -47,6 +49,7 @@ jobs:
           FOLDERNAME="content/posts/$DATE-$SLUG"
           FILENAME="$FOLDERNAME/index.md"
           mkdir -p "$FOLDERNAME"
+
           cat > "$FILENAME" <<EOF
           ---
           title: "$TITRE"
@@ -84,88 +87,15 @@ jobs:
             **Ajouter des images / pièces jointes (Roq les détecte automatiquement) :**  
             ➜ [Déposer des fichiers dans ce dossier](${{ steps.generate.outputs.upload_url }})
 
-      # -------- Build & Deploy après création/MAJ PR --------
-
-      - name: Définir PR_NUMBER
+      # --- Publier le n° de PR en artifact pour le workflow downstream ---
+      - name: Save PR number
         if: ${{ steps.cpr.outputs.pull-request-number != '' }}
-        run: echo "PR_NUMBER=${{ steps.cpr.outputs.pull-request-number }}" >> $GITHUB_ENV
+        run: echo "${{ steps.cpr.outputs.pull-request-number }}" > pr-number.txt
 
-      - name: Checkout la branche de la PR
-        if: ${{ env.PR_NUMBER != '' }}
-        uses: actions/checkout@v4
+      - name: Upload PR number artifact
+        if: ${{ steps.cpr.outputs.pull-request-number != '' }}
+        uses: actions/upload-artifact@v4
         with:
-          ref: ${{ steps.generate.outputs.branch }}
-
-      - name: Set up JDK 21 (cache Maven)
-        if: ${{ env.PR_NUMBER != '' }}
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      # (Optionnel) Prime le cache pour des builds très rapides ensuite
-      - name: Prime Maven cache (go-offline)
-        if: ${{ env.PR_NUMBER != '' }}
-        run: ./mvnw -B -q -DskipTests dependency:go-offline
-
-      # (Optionnel) Cache npm global pour l'install de surge
-      - name: Cache npm (global)
-        if: ${{ env.PR_NUMBER != '' }}
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-global-v1
-          restore-keys: |
-            ${{ runner.os }}-npm-global-
-
-      - name: Setup Node.js
-        if: ${{ env.PR_NUMBER != '' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Surge
-        if: ${{ env.PR_NUMBER != '' }}
-        run: npm install -g surge
-
-      # Choisis l’une des deux lignes suivantes selon ton besoin :
-      # (A) Génération directe du site (plus rapide si ton plugin le supporte)
-      # - name: Build Roq site (generate-only)
-      #   if: ${{ env.PR_NUMBER != '' }}
-      #   run: QUARKUS_ROQ_GENERATOR_BATCH=true ./mvnw -B -q -DskipTests -Dspotless.skip=true -Dcheckstyle.skip=true quarkus:roq-generate-site
-
-      # (B) Build “package + run” (moins rapide)
-      - name: Build Roq site (package + run)
-        if: ${{ env.PR_NUMBER != '' }}
-        run: |
-          QUARKUS_ROQ_GENERATOR_BATCH=true \
-          ./mvnw -B -q \
-            -DskipTests -DskipITs \
-            -Dmaven.javadoc.skip=true \
-            -Dspotless.skip=true -Dcheckstyle.skip=true \
-            package quarkus:run
-
-      - name: Deploy to Surge
-        if: ${{ env.PR_NUMBER != '' }}
-        env:
-          SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}
-        run: |
-          export DEPLOY_DOMAIN=https://pr-${{ env.PR_NUMBER }}-roq-preview.surge.sh
-          # adapte le dossier si tu utilises la génération "A"
-          surge ./target/roq --domain $DEPLOY_DOMAIN --token $SURGE_TOKEN
-          echo "DEPLOY_DOMAIN=$DEPLOY_DOMAIN" >> $GITHUB_ENV
-
-      - name: Commenter la PR avec le lien de preview
-        if: ${{ env.PR_NUMBER != '' }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = Number(process.env.PR_NUMBER);
-            const url = process.env.DEPLOY_DOMAIN || 'preview non disponible';
-            await github.rest.issues.createComment({
-              issue_number: prNumber,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `🚀 Preview Roq : [${url}](${url})`
-            });
+          name: pr-number
+          path: pr-number.txt
+          retention-days: 1
