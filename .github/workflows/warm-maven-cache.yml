@@ -1,0 +1,26 @@
+name: Warm Maven Cache
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * 1' # chaque lundi 03:00 UTC
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.m2/wrapper
+            ~/.quarkus
+          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml', '**/.mvn/wrapper/maven-wrapper.properties') }}
+          restore-keys: |
+            maven-${{ runner.os }}-
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: ./mvnw -B -q -DskipTests dependency:go-offline
