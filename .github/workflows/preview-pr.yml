@@ -37,7 +37,7 @@ jobs:
         with:
           ref: refs/pull/${{ env.PR_NUMBER }}/merge
 
-      # --- Cache Maven repo (partagé inter-PR)
+      # --- Cache Maven repo
       - name: Cache Maven repository
         uses: actions/cache@v4
         with:
@@ -49,34 +49,34 @@ jobs:
           restore-keys: |
             maven-${{ runner.os }}-
 
-      # (Option A) setup-java sans son cache intégré,
-      # puisqu'on gère le cache nous-mêmes juste au-dessus
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      # Prime le cache pour le offline (rapide si hit)
       - name: Prime Maven cache (go-offline)
         run: ./mvnw -B -q -DskipTests dependency:go-offline
 
-      # --- Cache npm (évite de re-télécharger les deps front)
+      # --- Cache global npm (utile pour surge)
+      - name: Cache global npm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: |
-            package-lock.json
-            **/package-lock.json
 
       - name: Install Surge
         run: npm install -g surge
 
       - name: Build Roq site
         env:
-          # Facultatif, peut aider certains plugins à être plus "offline"
           MAVEN_OPTS: -Dmaven.repo.local=$HOME/.m2/repository
         run: QUARKUS_ROQ_GENERATOR_BATCH=true ./mvnw -B -q package quarkus:run
 
