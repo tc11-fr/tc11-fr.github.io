@@ -84,19 +84,34 @@ jobs:
         env:
           SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}
         run: |
-          export DEPLOY_DOMAIN=https://pr-${{ env.PR_NUMBER }}-roq-preview.surge.sh
-          surge ./target/roq --domain $DEPLOY_DOMAIN --token $SURGE_TOKEN
-          echo "DEPLOY_DOMAIN=$DEPLOY_DOMAIN" >> $GITHUB_ENV
+          set -euo pipefail
+          export PROD_DOMAIN="https://pr-${{ env.PR_NUMBER }}-roq-preview.surge.sh"
+
+          # Run surge and capture output
+          TMP_OUT="$(mktemp)"
+          surge ./target/roq --domain "$PROD_DOMAIN" --token "$SURGE_TOKEN" | tee "$TMP_OUT"
+
+          # Extract the "Live preview" URL from surge output
+          LIVE_URL="$(grep -Eo 'Live preview[[:space:].]*https?://[^[:space:]]+' "$TMP_OUT" | awk '{print $NF}' | tail -n1 || true)"
+
+          echo "DEPLOY_DOMAIN=$PROD_DOMAIN" >> $GITHUB_ENV
+          if [ -n "${LIVE_URL:-}" ]; then
+            echo "LIVE_DEPLOY_DOMAIN=$LIVE_URL" >> $GITHUB_ENV
+          fi
 
       - name: Comment PR with preview link
         uses: actions/github-script@v7
         with:
           script: |
             const prNumber = Number(process.env.PR_NUMBER);
-            const url = process.env.DEPLOY_DOMAIN || 'preview non disponible';
+            const live = process.env.LIVE_DEPLOY_DOMAIN;
+            const prod = process.env.DEPLOY_DOMAIN || 'unavailable';
+            const body = live
+              ? `🚀 **Live preview (latest):** [${live}](${live})\n\n🌐 Production (may take a bit to refresh): [${prod}](${prod})`
+              : `🌐 Preview: [${prod}](${prod})`;
             await github.rest.issues.createComment({
               issue_number: prNumber,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `🚀 Preview Roq site: [${url}](${url})`
+              body
             });
