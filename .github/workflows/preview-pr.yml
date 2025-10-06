@@ -31,31 +31,53 @@ jobs:
           echo "No PR number found (nothing to preview). Exiting."
           exit 0
 
-      # Toujours builder sur le merge-ref de la PR
+      # --- Checkout merge ref de la PR
       - name: Checkout PR (merge ref)
         uses: actions/checkout@v4
         with:
           ref: refs/pull/${{ env.PR_NUMBER }}/merge
 
-      - name: Set up JDK 21 (cache Maven)
+      # --- Cache Maven repo (partagé inter-PR)
+      - name: Cache Maven repository
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.m2/wrapper
+            ~/.quarkus
+          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml', '**/.mvn/wrapper/maven-wrapper.properties') }}
+          restore-keys: |
+            maven-${{ runner.os }}-
+
+      # (Option A) setup-java sans son cache intégré,
+      # puisqu'on gère le cache nous-mêmes juste au-dessus
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-          cache: maven
 
+      # Prime le cache pour le offline (rapide si hit)
       - name: Prime Maven cache (go-offline)
         run: ./mvnw -B -q -DskipTests dependency:go-offline
 
+      # --- Cache npm (évite de re-télécharger les deps front)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            **/package-lock.json
 
       - name: Install Surge
         run: npm install -g surge
 
       - name: Build Roq site
+        env:
+          # Facultatif, peut aider certains plugins à être plus "offline"
+          MAVEN_OPTS: -Dmaven.repo.local=$HOME/.m2/repository
         run: QUARKUS_ROQ_GENERATOR_BATCH=true ./mvnw -B -q package quarkus:run
 
       - name: Deploy to Surge
