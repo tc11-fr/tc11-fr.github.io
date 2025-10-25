@@ -149,7 +149,7 @@ body{font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ari
   background: rgba(255,255,255,0.35);
 }
 /* Adjust body padding when banner is visible */
-body:has(#preview-banner[style*="display: block"]) {
+body.preview-banner-shown {
   padding-top: 60px;
 }
 @media (max-width: 640px) {
@@ -165,7 +165,7 @@ body:has(#preview-banner[style*="display: block"]) {
   .preview-banner-subtitle {
     font-size: 11px;
   }
-  body:has(#preview-banner[style*="display: block"]) {
+  body.preview-banner-shown {
     padding-top: 52px;
   }
 }
