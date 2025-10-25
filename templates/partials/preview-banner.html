@@ -1,0 +1,18 @@
+<!-- Preview Banner - Only shown on surge.sh preview URLs -->
+<div id="preview-banner" style="display: none;">
+  <div class="preview-banner-content">
+    <div class="preview-banner-icon">⚠️</div>
+    <div class="preview-banner-text">
+      <strong>Environnement de prévisualisation</strong>
+      <span class="preview-banner-subtitle">Ce n'est pas le site officiel - Site de test uniquement</span>
+    </div>
+    <button onclick="document.getElementById('preview-banner').style.display='none'" class="preview-banner-close" aria-label="Fermer">✕</button>
+  </div>
+</div>
+
+<script>
+  // Check if we're on a preview URL (surge.sh)
+  if (window.location.hostname.includes('surge.sh') || window.location.hostname.includes('preview')) {
+    document.getElementById('preview-banner').style.display = 'block';
+  }
+</script>
