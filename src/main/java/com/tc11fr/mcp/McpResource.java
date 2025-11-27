@@ -1,5 +1,7 @@
 package com.tc11fr.mcp;
 
+import java.util.List;
+
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -26,14 +28,6 @@ public class McpResource {
     @Inject
     @ConfigProperty(name = "mcp.server.enabled", defaultValue = "true")
     boolean mcpEnabled;
-
-    @Inject
-    @ConfigProperty(name = "mcp.server.path", defaultValue = "/mcp")
-    String mcpPath;
-
-    @Inject
-    @ConfigProperty(name = "mcp.server.port", defaultValue = "8080")
-    int mcpPort;
 
     /**
      * GET /mcp - Returns the server status and capabilities.
@@ -77,17 +71,17 @@ public class McpResource {
             case "tools/list" -> new McpResponse(
                 "tools/list_result",
                 message.id(),
-                new McpToolsListResult(java.util.List.of())
+                new McpToolsListResult(List.of())
             );
             case "resources/list" -> new McpResponse(
                 "resources/list_result",
                 message.id(),
-                new McpResourcesListResult(java.util.List.of())
+                new McpResourcesListResult(List.of())
             );
             case "prompts/list" -> new McpResponse(
                 "prompts/list_result",
                 message.id(),
-                new McpPromptsListResult(java.util.List.of())
+                new McpPromptsListResult(List.of())
             );
             default -> new McpResponse(
                 "ack",
@@ -167,20 +161,20 @@ public class McpResource {
      * Tools list result.
      */
     public record McpToolsListResult(
-        java.util.List<Object> tools
+        List<Object> tools
     ) {}
 
     /**
      * Resources list result.
      */
     public record McpResourcesListResult(
-        java.util.List<Object> resources
+        List<Object> resources
     ) {}
 
     /**
      * Prompts list result.
      */
     public record McpPromptsListResult(
-        java.util.List<Object> prompts
+        List<Object> prompts
     ) {}
 }
