@@ -3,6 +3,12 @@ package fr.tc11;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.microsoft.playwright.Browser;
+import com.microsoft.playwright.BrowserContext;
+import com.microsoft.playwright.BrowserType;
+import com.microsoft.playwright.Page;
+import com.microsoft.playwright.Playwright;
+import com.microsoft.playwright.options.WaitUntilState;
 import io.quarkus.runtime.Startup;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -20,18 +26,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Service to fetch Instagram posts using the Instagram Graph API during site generation.
- * Falls back to existing instagram.json if fetching fails or if no access token is configured.
+ * Service to fetch Instagram posts during site generation.
  * 
- * To use this service, you need:
- * 1. An Instagram Professional account (Business or Creator)
- * 2. A Facebook Page connected to the Instagram account
- * 3. A Facebook App with Instagram Graph API permissions
- * 4. A long-lived access token configured via INSTAGRAM_ACCESS_TOKEN environment variable
+ * Uses the following fallback chain:
+ * 1. Instagram Graph API (if credentials configured)
+ * 2. Headless browser scraping via Playwright (if no API credentials)
+ * 3. Existing instagram.json file (if all else fails)
  * 
  * @see <a href="https://developers.facebook.com/docs/instagram-api/">Instagram Graph API Documentation</a>
  */
@@ -45,15 +53,27 @@ public class InstagramPostsFetcher {
     private static final String GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
     private static final String MEDIA_FIELDS = "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp";
     
+    // Instagram profile URL for headless browser scraping
+    private static final String INSTAGRAM_PROFILE_URL = "https://www.instagram.com/%s/";
+    
+    // Pattern to find post shortcodes in the page
+    private static final Pattern POST_LINK_PATTERN = Pattern.compile("/p/([A-Za-z0-9_-]+)");
+    private static final Pattern REEL_LINK_PATTERN = Pattern.compile("/reel/([A-Za-z0-9_-]+)");
+    
     private static final int MAX_POSTS = 6;
     private static final int CONNECT_TIMEOUT_SECONDS = 10;
     private static final int REQUEST_TIMEOUT_SECONDS = 30;
+    private static final int BROWSER_TIMEOUT_MS = 30000;
+    private static final int BROWSER_CONTENT_LOAD_WAIT_MS = 2000;
 
     @ConfigProperty(name = "tc11.instagram.enabled", defaultValue = "true")
     boolean enabled;
 
     @ConfigProperty(name = "tc11.instagram.output-path", defaultValue = "content/instagram.json")
     String outputPath;
+    
+    @ConfigProperty(name = "tc11.instagram.username", defaultValue = "tc11assb")
+    String instagramUsername;
     
     // Access token from environment variable (recommended) or application.properties
     @ConfigProperty(name = "tc11.instagram.access-token")
@@ -81,42 +101,51 @@ public class InstagramPostsFetcher {
         }
 
         List<String> existingPosts = readExistingPosts();
+        List<String> fetchedUrls = null;
         
-        // Check if Graph API credentials are configured
-        if (accessToken.isEmpty() || accessToken.get().isBlank()) {
-            LOG.info("Instagram Graph API access token not configured. Using existing instagram.json");
-            if (existingPosts.isEmpty()) {
-                LOG.warn("No existing instagram.json found. Instagram gallery will be empty.");
+        // Try Graph API first if credentials are configured
+        if (hasGraphApiCredentials()) {
+            LOG.info("Fetching Instagram posts via Graph API");
+            try {
+                fetchedUrls = fetchInstagramPostsViaGraphApi();
+                if (!fetchedUrls.isEmpty()) {
+                    writePostsToFile(fetchedUrls);
+                    LOG.infof("Successfully fetched %d Instagram posts via Graph API", fetchedUrls.size());
+                    return;
+                }
+            } catch (Exception e) {
+                LOG.warnf("Graph API failed: %s. Trying headless browser...", e.getMessage());
             }
-            return;
+        } else {
+            LOG.info("Graph API credentials not configured. Trying headless browser scraping...");
         }
         
-        if (accountId.isEmpty() || accountId.get().isBlank()) {
-            LOG.info("Instagram account ID not configured. Using existing instagram.json");
-            if (existingPosts.isEmpty()) {
-                LOG.warn("No existing instagram.json found. Instagram gallery will be empty.");
-            }
-            return;
-        }
-
-        LOG.info("Fetching Instagram posts via Graph API");
-        
+        // Fallback to headless browser scraping
         try {
-            List<String> fetchedUrls = fetchInstagramPostsViaGraphApi();
+            fetchedUrls = fetchInstagramPostsViaHeadlessBrowser();
             if (!fetchedUrls.isEmpty()) {
                 writePostsToFile(fetchedUrls);
-                LOG.infof("Successfully fetched and wrote %d Instagram posts", fetchedUrls.size());
-            } else if (!existingPosts.isEmpty()) {
-                LOG.info("No posts returned from API, keeping existing instagram.json");
-            } else {
-                LOG.warn("No Instagram posts available - instagram.json will be empty or missing");
+                LOG.infof("Successfully fetched %d Instagram posts via headless browser", fetchedUrls.size());
+                return;
             }
         } catch (Exception e) {
-            LOG.warnf("Failed to fetch Instagram posts via Graph API: %s", e.getMessage());
-            if (!existingPosts.isEmpty()) {
-                LOG.infof("Using %d existing posts from instagram.json", existingPosts.size());
-            }
+            LOG.warnf("Headless browser scraping failed: %s", e.getMessage());
         }
+        
+        // Final fallback to existing instagram.json
+        if (!existingPosts.isEmpty()) {
+            LOG.infof("Using %d existing posts from instagram.json", existingPosts.size());
+        } else {
+            LOG.warn("No Instagram posts available - instagram.json will be empty or missing");
+        }
+    }
+
+    /**
+     * Checks if Graph API credentials are configured.
+     */
+    private boolean hasGraphApiCredentials() {
+        return accessToken.isPresent() && !accessToken.get().isBlank() 
+                && accountId.isPresent() && !accountId.get().isBlank();
     }
 
     /**
@@ -150,6 +179,83 @@ public class InstagramPostsFetcher {
         }
 
         return parseMediaResponse(response.body());
+    }
+
+    /**
+     * Fetches Instagram posts using a headless browser (Playwright).
+     * This method loads the Instagram profile page and extracts post links
+     * after JavaScript has rendered the content.
+     */
+    List<String> fetchInstagramPostsViaHeadlessBrowser() {
+        LOG.infof("Starting headless browser to scrape @%s", instagramUsername);
+        
+        try (Playwright playwright = Playwright.create()) {
+            BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions()
+                    .setHeadless(true)
+                    .setTimeout(BROWSER_TIMEOUT_MS);
+            
+            try (Browser browser = playwright.chromium().launch(launchOptions)) {
+                BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+                        .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
+                
+                Page page = context.newPage();
+                
+                String profileUrl = String.format(INSTAGRAM_PROFILE_URL, instagramUsername);
+                LOG.debugf("Navigating to %s", profileUrl);
+                
+                // Navigate to the profile page and wait for network to be idle
+                page.navigate(profileUrl, new Page.NavigateOptions()
+                        .setTimeout(BROWSER_TIMEOUT_MS)
+                        .setWaitUntil(WaitUntilState.NETWORKIDLE));
+                
+                // Wait a bit more for dynamic content to load
+                page.waitForTimeout(BROWSER_CONTENT_LOAD_WAIT_MS);
+                
+                // Get the page content after JavaScript has executed
+                String content = page.content();
+                
+                return extractPostUrlsFromHtml(content);
+            }
+        } catch (Exception e) {
+            LOG.warnf("Headless browser error: %s", e.getMessage());
+            throw new RuntimeException("Failed to scrape Instagram via headless browser", e);
+        }
+    }
+
+    /**
+     * Extracts Instagram post URLs from the rendered HTML page.
+     * Uses /p/ URL format for all content types as it works for embedding both posts and reels.
+     */
+    List<String> extractPostUrlsFromHtml(String html) {
+        Set<String> shortcodes = new LinkedHashSet<>();
+        
+        // Extract from post links (/p/)
+        Matcher postMatcher = POST_LINK_PATTERN.matcher(html);
+        while (postMatcher.find()) {
+            String shortcode = postMatcher.group(1);
+            if (shortcode.length() >= 10 && shortcode.length() <= 12) {
+                shortcodes.add(shortcode);
+            }
+        }
+        
+        // Extract from reel links (/reel/) - we use /p/ format as it works for embedding both types
+        Matcher reelMatcher = REEL_LINK_PATTERN.matcher(html);
+        while (reelMatcher.find()) {
+            String shortcode = reelMatcher.group(1);
+            if (shortcode.length() >= 10 && shortcode.length() <= 12) {
+                shortcodes.add(shortcode);
+            }
+        }
+        
+        // Convert shortcodes to full URLs using /p/ format (works for embedding both posts and reels)
+        List<String> postUrls = new ArrayList<>();
+        for (String shortcode : shortcodes) {
+            if (postUrls.size() >= MAX_POSTS) break;
+            postUrls.add("https://www.instagram.com/p/" + shortcode);
+        }
+        
+        LOG.debugf("Extracted %d posts from HTML", postUrls.size());
+        return postUrls;
     }
 
     /**
@@ -229,5 +335,12 @@ public class InstagramPostsFetcher {
      */
     List<String> testParseMediaResponse(String jsonResponse) {
         return parseMediaResponse(jsonResponse);
+    }
+    
+    /**
+     * For testing: extract post URLs from HTML.
+     */
+    List<String> testExtractPostUrlsFromHtml(String html) {
+        return extractPostUrlsFromHtml(html);
     }
 }

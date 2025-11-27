@@ -9,13 +9,15 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for InstagramPostsFetcher Graph API parsing logic.
+ * Tests for InstagramPostsFetcher parsing logic.
  */
 @QuarkusTest
 class InstagramPostsFetcherTest {
 
     @Inject
     InstagramPostsFetcher fetcher;
+
+    // ========== Graph API Response Parsing Tests ==========
 
     @Test
     void testParseMediaResponseWithValidData() {
@@ -149,5 +151,94 @@ class InstagramPostsFetcherTest {
 
         assertNotNull(urls);
         assertTrue(urls.isEmpty());
+    }
+
+    // ========== HTML Extraction Tests (for headless browser fallback) ==========
+
+    @Test
+    void testExtractPostUrlsFromHtmlWithPostLinks() {
+        String html = """
+            <html>
+            <body>
+                <a href="/p/DMc_B-kNmxf/">Post 1</a>
+                <a href="/p/DK5HR3bgmSY/">Post 2</a>
+                <a href="/p/DKhw5Octojb/">Post 3</a>
+            </body>
+            </html>
+            """;
+
+        List<String> urls = fetcher.testExtractPostUrlsFromHtml(html);
+
+        assertNotNull(urls);
+        assertEquals(3, urls.size());
+        assertTrue(urls.contains("https://www.instagram.com/p/DMc_B-kNmxf"));
+        assertTrue(urls.contains("https://www.instagram.com/p/DK5HR3bgmSY"));
+        assertTrue(urls.contains("https://www.instagram.com/p/DKhw5Octojb"));
+    }
+
+    @Test
+    void testExtractPostUrlsFromHtmlWithReelLinks() {
+        // Reels are converted to /p/ URLs because /p/ format works for embedding both posts and reels
+        String html = """
+            <html>
+            <body>
+                <a href="/reel/ABC123DEF45/">Reel 1</a>
+                <a href="/p/XYZ789GHI01/">Post 1</a>
+            </body>
+            </html>
+            """;
+
+        List<String> urls = fetcher.testExtractPostUrlsFromHtml(html);
+
+        assertNotNull(urls);
+        assertEquals(2, urls.size());
+        // Both reels and posts use /p/ format for consistent embedding behavior
+        assertTrue(urls.contains("https://www.instagram.com/p/ABC123DEF45"));
+        assertTrue(urls.contains("https://www.instagram.com/p/XYZ789GHI01"));
+    }
+
+    @Test
+    void testExtractPostUrlsFromHtmlDeduplicates() {
+        String html = """
+            <html>
+            <body>
+                <a href="/p/ABC123DEF45/">Post 1</a>
+                <a href="/p/ABC123DEF45/">Post 1 again</a>
+                <div data-href="/p/ABC123DEF45/"></div>
+            </body>
+            </html>
+            """;
+
+        List<String> urls = fetcher.testExtractPostUrlsFromHtml(html);
+
+        assertNotNull(urls);
+        assertEquals(1, urls.size());
+        assertEquals("https://www.instagram.com/p/ABC123DEF45", urls.get(0));
+    }
+
+    @Test
+    void testExtractPostUrlsFromHtmlEmpty() {
+        String html = "<html><body>No Instagram content here</body></html>";
+
+        List<String> urls = fetcher.testExtractPostUrlsFromHtml(html);
+
+        assertNotNull(urls);
+        assertTrue(urls.isEmpty());
+    }
+
+    @Test
+    void testExtractPostUrlsFromHtmlMaxLimit() {
+        // HTML with more than MAX_POSTS (6) shortcodes
+        StringBuilder html = new StringBuilder("<html><body>");
+        for (int i = 0; i < 10; i++) {
+            html.append(String.format("<a href=\"/p/SHORTCODE%02d/\">Post %d</a>", i, i));
+        }
+        html.append("</body></html>");
+
+        List<String> urls = fetcher.testExtractPostUrlsFromHtml(html.toString());
+
+        assertNotNull(urls);
+        // Should be limited to MAX_POSTS (6)
+        assertEquals(6, urls.size());
     }
 }
