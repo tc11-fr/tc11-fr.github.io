@@ -51,7 +51,8 @@ class InstagramPostsFetcherTest {
 
     @Test
     void testExtractPostUrlsFromPatterns() {
-        // HTML with direct post links
+        // HTML with direct post and reel links
+        // Note: Reels are converted to /p/ URLs which work for embedding both posts and reels
         String html = """
             <html>
             <a href="/p/DMc_B-kNmxf">Post 1</a>
@@ -66,6 +67,7 @@ class InstagramPostsFetcherTest {
         assertEquals(3, urls.size());
         assertTrue(urls.contains("https://www.instagram.com/p/DMc_B-kNmxf"));
         assertTrue(urls.contains("https://www.instagram.com/p/DK5HR3bgmSY"));
+        // Reel shortcode is also converted to /p/ URL for consistent embedding
         assertTrue(urls.contains("https://www.instagram.com/p/DKhw5Octojb"));
     }
 

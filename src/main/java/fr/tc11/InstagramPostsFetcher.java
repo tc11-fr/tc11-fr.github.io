@@ -35,12 +35,21 @@ public class InstagramPostsFetcher {
 
     private static final Logger LOG = Logger.getLogger(InstagramPostsFetcher.class);
     
-    private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    // Default User-Agent - configurable to avoid outdated browser version issues
+    private static final String DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; TC11SiteBot/1.0)";
     private static final String INSTAGRAM_PROFILE_URL = "https://www.instagram.com/%s/";
     
-    // Pattern to find shortcodes in various formats used by Instagram
-    private static final Pattern SHORTCODE_PATTERN = Pattern.compile(
-            "(?:\"shortcode\"\\s*:\\s*\"|/p/|/reel/)([A-Za-z0-9_-]{10,12})");
+    // Pattern to find shortcodes in JSON format (used by _sharedData and other embedded data)
+    private static final Pattern JSON_SHORTCODE_PATTERN = Pattern.compile(
+            "\"shortcode\"\\s*:\\s*\"([A-Za-z0-9_-]{10,12})\"");
+    
+    // Pattern to find post URLs in links
+    private static final Pattern POST_URL_PATTERN = Pattern.compile(
+            "/p/([A-Za-z0-9_-]{10,12})");
+    
+    // Pattern to find reel URLs in links  
+    private static final Pattern REEL_URL_PATTERN = Pattern.compile(
+            "/reel/([A-Za-z0-9_-]{10,12})");
     
     private static final int MAX_POSTS = 6;
     private static final int CONNECT_TIMEOUT_SECONDS = 10;
@@ -54,6 +63,9 @@ public class InstagramPostsFetcher {
 
     @ConfigProperty(name = "tc11.instagram.output-path", defaultValue = "content/instagram.json")
     String outputPath;
+    
+    @ConfigProperty(name = "tc11.instagram.user-agent", defaultValue = DEFAULT_USER_AGENT)
+    String userAgent;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -102,7 +114,7 @@ public class InstagramPostsFetcher {
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(profileUrl))
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", userAgent)
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
                 .header("Accept-Language", "en-US,en;q=0.5")
                 .header("Sec-Fetch-Dest", "document")
@@ -126,6 +138,8 @@ public class InstagramPostsFetcher {
     /**
      * Extracts Instagram post URLs from the HTML page.
      * Tries multiple extraction methods for robustness.
+     * Note: Instagram shortcodes work with both /p/ and /reel/ URLs,
+     * but we use /p/ which works for both post types.
      */
     List<String> extractPostUrls(String html) {
         Set<String> shortcodes = new LinkedHashSet<>();
@@ -140,6 +154,7 @@ public class InstagramPostsFetcher {
         extractFromPatterns(html, shortcodes);
         
         // Convert shortcodes to full URLs
+        // Instagram /p/ URLs work for both posts and reels
         List<String> postUrls = new ArrayList<>();
         for (String shortcode : shortcodes) {
             if (postUrls.size() >= MAX_POSTS) break;
@@ -183,28 +198,46 @@ public class InstagramPostsFetcher {
 
     private void extractFromScheduledServerJS(String html, Set<String> shortcodes) {
         // Modern Instagram pages use ScheduledServerJS with encoded JSON
-        // Try to find media items in the page content
-        Pattern jsonPattern = Pattern.compile("\"xdt_api__v1__feed__user_timeline_graphql_connection\".*?\"edges\"\\s*:\\s*\\[(.*?)\\]", Pattern.DOTALL);
-        Matcher matcher = jsonPattern.matcher(html);
-        
-        if (matcher.find()) {
-            String edgesJson = matcher.group(1);
-            Matcher shortcodeMatcher = Pattern.compile("\"code\"\\s*:\\s*\"([A-Za-z0-9_-]+)\"").matcher(edgesJson);
-            while (shortcodeMatcher.find()) {
-                shortcodes.add(shortcodeMatcher.group(1));
+        // This pattern may change as Instagram updates their internal API
+        // Multiple fallback patterns to improve resilience
+        try {
+            // Try primary pattern
+            Pattern jsonPattern = Pattern.compile("\"xdt_api__v1__feed__user_timeline_graphql_connection\".*?\"edges\"\\s*:\\s*\\[(.*?)\\]", Pattern.DOTALL);
+            Matcher matcher = jsonPattern.matcher(html);
+            
+            if (matcher.find()) {
+                String edgesJson = matcher.group(1);
+                Matcher shortcodeMatcher = Pattern.compile("\"code\"\\s*:\\s*\"([A-Za-z0-9_-]+)\"").matcher(edgesJson);
+                while (shortcodeMatcher.find()) {
+                    String code = shortcodeMatcher.group(1);
+                    if (code.length() >= 10 && code.length() <= 12) {
+                        shortcodes.add(code);
+                    }
+                }
             }
+        } catch (Exception e) {
+            // Pattern matching failed - this is expected if Instagram changes their page structure
+            LOG.debugf("Failed to parse ScheduledServerJS data: %s", e.getMessage());
         }
     }
 
     private void extractFromPatterns(String html, Set<String> shortcodes) {
-        // Generic pattern to find shortcodes
-        Matcher matcher = SHORTCODE_PATTERN.matcher(html);
-        while (matcher.find()) {
-            String shortcode = matcher.group(1);
-            // Validate it looks like a real shortcode (11 chars typically)
-            if (shortcode.length() >= 10 && shortcode.length() <= 12) {
-                shortcodes.add(shortcode);
-            }
+        // Extract from JSON shortcode patterns
+        Matcher jsonMatcher = JSON_SHORTCODE_PATTERN.matcher(html);
+        while (jsonMatcher.find()) {
+            shortcodes.add(jsonMatcher.group(1));
+        }
+        
+        // Extract from post URLs (/p/)
+        Matcher postMatcher = POST_URL_PATTERN.matcher(html);
+        while (postMatcher.find()) {
+            shortcodes.add(postMatcher.group(1));
+        }
+        
+        // Extract from reel URLs (/reel/)
+        Matcher reelMatcher = REEL_URL_PATTERN.matcher(html);
+        while (reelMatcher.find()) {
+            shortcodes.add(reelMatcher.group(1));
         }
     }
 
