@@ -4,13 +4,6 @@ if(document.getElementById('year'))
 if(document.getElementById('maj-date'))
   document.getElementById('maj-date').textContent = dayjs().format('DD MMM YYYY');
 
-// Leaflet (modifie les coords par l’adresse du club)
-if(typeof L !== 'undefined' && document.getElementById('map')) {
-  const map = L.map('map').setView([48.8566, 2.3522], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
-  L.marker([48.8566, 2.3522]).addTo(map).bindPopup('TC11 — Nos courts').openPopup();
-}
-
 // Grille Instagram via oEmbed (chargement dynamique depuis instagram.json)
 if(document.getElementById('insta-grid')) {
   const grid = document.getElementById('insta-grid');
