@@ -1,4 +1,17 @@
 {
     "image": "mcr.microsoft.com/devcontainers/universal:2",
-    "forwardPorts": [8080]
+    "forwardPorts": [8080],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "redhat.java",
+                "vscjava.vscode-java-debug",
+                "vscjava.vscode-maven"
+            ],
+            "settings": {
+                "java.configuration.updateBuildConfiguration": "automatic"
+            }
+        }
+    },
+    "postStartCommand": "echo 'Run ./mvnw quarkus:dev to start the Quarkus development server with MCP endpoint at http://localhost:8080/mcp'"
 }
