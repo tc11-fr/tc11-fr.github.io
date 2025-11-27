@@ -64,18 +64,27 @@ public class InstagramPostsFetcher {
             return;
         }
 
-        LOG.infof("Fetching Instagram posts for @%s", instagramUsername);
+        LOG.infof("Attempting to fetch Instagram posts for @%s", instagramUsername);
+        
+        List<String> existingPosts = readExistingPosts();
         
         try {
-            List<String> postUrls = fetchInstagramPosts(instagramUsername);
-            if (!postUrls.isEmpty()) {
-                writePostsToFile(postUrls);
-                LOG.infof("Successfully fetched %d Instagram posts", postUrls.size());
+            List<String> fetchedUrls = fetchInstagramPosts(instagramUsername);
+            if (!fetchedUrls.isEmpty()) {
+                writePostsToFile(fetchedUrls);
+                LOG.infof("Successfully fetched and wrote %d Instagram posts", fetchedUrls.size());
+            } else if (!existingPosts.isEmpty()) {
+                LOG.infof("No new Instagram posts found, keeping %d existing posts from instagram.json", existingPosts.size());
             } else {
-                LOG.warn("No Instagram posts found from scraping, keeping existing instagram.json");
+                LOG.warn("No Instagram posts available - instagram.json will be empty or missing");
             }
         } catch (Exception e) {
-            LOG.warnf("Failed to fetch Instagram posts: %s. Keeping existing instagram.json", e.getMessage());
+            if (!existingPosts.isEmpty()) {
+                LOG.infof("Failed to fetch Instagram posts (%s). Using %d existing posts from instagram.json", 
+                        e.getMessage(), existingPosts.size());
+            } else {
+                LOG.warnf("Failed to fetch Instagram posts: %s. No existing instagram.json to fall back to.", e.getMessage());
+            }
         }
     }
 
