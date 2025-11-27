@@ -9,7 +9,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for InstagramPostsFetcher extraction logic.
+ * Tests for InstagramPostsFetcher Graph API parsing logic.
  */
 @QuarkusTest
 class InstagramPostsFetcherTest {
@@ -18,123 +18,136 @@ class InstagramPostsFetcherTest {
     InstagramPostsFetcher fetcher;
 
     @Test
-    void testExtractPostUrlsFromSharedData() {
-        // Simulated HTML with _sharedData containing post shortcodes
-        String html = """
-            <html>
-            <script>window._sharedData = {
-                "entry_data": {
-                    "ProfilePage": [{
-                        "graphql": {
-                            "user": {
-                                "edge_owner_to_timeline_media": {
-                                    "edges": [
-                                        {"node": {"shortcode": "ABC123DEF45"}},
-                                        {"node": {"shortcode": "XYZ789GHI01"}}
-                                    ]
-                                }
-                            }
-                        }
-                    }]
+    void testParseMediaResponseWithValidData() {
+        // Simulated Graph API response with media data
+        String jsonResponse = """
+            {
+                "data": [
+                    {
+                        "id": "12345",
+                        "permalink": "https://www.instagram.com/p/ABC123DEF45/",
+                        "media_type": "IMAGE",
+                        "timestamp": "2024-01-15T10:30:00+0000"
+                    },
+                    {
+                        "id": "67890",
+                        "permalink": "https://www.instagram.com/p/XYZ789GHI01/",
+                        "media_type": "VIDEO",
+                        "timestamp": "2024-01-14T15:45:00+0000"
+                    }
+                ],
+                "paging": {
+                    "cursors": {
+                        "before": "abc",
+                        "after": "xyz"
+                    }
                 }
-            };</script>
-            </html>
+            }
             """;
 
-        List<String> urls = fetcher.extractPostUrls(html);
+        List<String> urls = fetcher.testParseMediaResponse(jsonResponse);
 
         assertNotNull(urls);
         assertEquals(2, urls.size());
-        assertTrue(urls.contains("https://www.instagram.com/p/ABC123DEF45"));
-        assertTrue(urls.contains("https://www.instagram.com/p/XYZ789GHI01"));
+        assertEquals("https://www.instagram.com/p/ABC123DEF45/", urls.get(0));
+        assertEquals("https://www.instagram.com/p/XYZ789GHI01/", urls.get(1));
     }
 
     @Test
-    void testExtractPostUrlsFromPatterns() {
-        // HTML with direct post and reel links
-        // Note: Reels are converted to /p/ URLs which work for embedding both posts and reels
-        String html = """
-            <html>
-            <a href="/p/DMc_B-kNmxf">Post 1</a>
-            <a href="/p/DK5HR3bgmSY">Post 2</a>
-            <a href="/reel/DKhw5Octojb">Reel 1</a>
-            </html>
+    void testParseMediaResponseWithEmptyData() {
+        String jsonResponse = """
+            {
+                "data": []
+            }
             """;
 
-        List<String> urls = fetcher.extractPostUrls(html);
+        List<String> urls = fetcher.testParseMediaResponse(jsonResponse);
 
         assertNotNull(urls);
-        assertEquals(3, urls.size());
-        assertTrue(urls.contains("https://www.instagram.com/p/DMc_B-kNmxf"));
-        assertTrue(urls.contains("https://www.instagram.com/p/DK5HR3bgmSY"));
-        // Reel shortcode is also converted to /p/ URL for consistent embedding
-        assertTrue(urls.contains("https://www.instagram.com/p/DKhw5Octojb"));
+        assertTrue(urls.isEmpty());
     }
 
     @Test
-    void testExtractPostUrlsFromJsonPattern() {
-        // HTML with JSON shortcode pattern
-        String html = """
-            <html>
-            <script>{"shortcode": "ABC123DEF45", "other": "data"}</script>
-            <script>{"shortcode": "XYZ789GHI01"}</script>
-            </html>
+    void testParseMediaResponseWithMissingPermalink() {
+        // Response with some items missing permalink
+        String jsonResponse = """
+            {
+                "data": [
+                    {
+                        "id": "12345",
+                        "permalink": "https://www.instagram.com/p/ABC123DEF45/",
+                        "media_type": "IMAGE"
+                    },
+                    {
+                        "id": "67890",
+                        "media_type": "VIDEO"
+                    }
+                ]
+            }
             """;
 
-        List<String> urls = fetcher.extractPostUrls(html);
-
-        assertNotNull(urls);
-        assertEquals(2, urls.size());
-        assertTrue(urls.contains("https://www.instagram.com/p/ABC123DEF45"));
-        assertTrue(urls.contains("https://www.instagram.com/p/XYZ789GHI01"));
-    }
-
-    @Test
-    void testExtractPostUrlsDeduplicates() {
-        // HTML with duplicate shortcodes
-        String html = """
-            <html>
-            <a href="/p/ABC123DEF45">Post 1</a>
-            <a href="/p/ABC123DEF45">Post 1 again</a>
-            <script>{"shortcode": "ABC123DEF45"}</script>
-            </html>
-            """;
-
-        List<String> urls = fetcher.extractPostUrls(html);
+        List<String> urls = fetcher.testParseMediaResponse(jsonResponse);
 
         assertNotNull(urls);
         assertEquals(1, urls.size());
-        assertEquals("https://www.instagram.com/p/ABC123DEF45", urls.get(0));
+        assertEquals("https://www.instagram.com/p/ABC123DEF45/", urls.get(0));
     }
 
     @Test
-    void testExtractPostUrlsEmptyHtml() {
-        List<String> urls = fetcher.extractPostUrls("");
+    void testParseMediaResponseWithInvalidJson() {
+        String invalidJson = "not valid json";
+
+        List<String> urls = fetcher.testParseMediaResponse(invalidJson);
+
         assertNotNull(urls);
         assertTrue(urls.isEmpty());
     }
 
     @Test
-    void testExtractPostUrlsNoMatches() {
-        String html = "<html><body>No Instagram content here</body></html>";
-        List<String> urls = fetcher.extractPostUrls(html);
+    void testParseMediaResponseWithCarouselAlbum() {
+        // Response with carousel album type (multiple images in one post)
+        String jsonResponse = """
+            {
+                "data": [
+                    {
+                        "id": "12345",
+                        "permalink": "https://www.instagram.com/p/CAROUSEL123/",
+                        "media_type": "CAROUSEL_ALBUM",
+                        "timestamp": "2024-01-15T10:30:00+0000"
+                    },
+                    {
+                        "id": "67890",
+                        "permalink": "https://www.instagram.com/reel/REEL12345/",
+                        "media_type": "VIDEO",
+                        "timestamp": "2024-01-14T15:45:00+0000"
+                    }
+                ]
+            }
+            """;
+
+        List<String> urls = fetcher.testParseMediaResponse(jsonResponse);
+
         assertNotNull(urls);
-        assertTrue(urls.isEmpty());
+        assertEquals(2, urls.size());
+        assertTrue(urls.contains("https://www.instagram.com/p/CAROUSEL123/"));
+        assertTrue(urls.contains("https://www.instagram.com/reel/REEL12345/"));
     }
 
     @Test
-    void testExtractPostUrlsMaxLimit() {
-        // HTML with more than MAX_POSTS shortcodes
-        StringBuilder html = new StringBuilder("<html>");
-        for (int i = 0; i < 10; i++) {
-            html.append(String.format("<a href=\"/p/SHORTCODE%02d\">Post %d</a>", i, i));
-        }
-        html.append("</html>");
+    void testParseMediaResponseWithNullData() {
+        String jsonResponse = """
+            {
+                "error": {
+                    "message": "Some error",
+                    "type": "OAuthException",
+                    "code": 190
+                }
+            }
+            """;
 
-        List<String> urls = fetcher.extractPostUrls(html.toString());
+        List<String> urls = fetcher.testParseMediaResponse(jsonResponse);
 
         assertNotNull(urls);
-        // Should be limited to MAX_POSTS (6)
-        assertEquals(6, urls.size());
+        assertTrue(urls.isEmpty());
     }
 }

@@ -11,23 +11,29 @@ import org.jboss.logging.Logger;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Optional;
 
 /**
- * Service to fetch Instagram posts from a public profile during site generation.
- * Uses the public Instagram profile page to extract post shortcodes.
- * Falls back to existing instagram.json if fetching fails.
+ * Service to fetch Instagram posts using the Instagram Graph API during site generation.
+ * Falls back to existing instagram.json if fetching fails or if no access token is configured.
+ * 
+ * To use this service, you need:
+ * 1. An Instagram Professional account (Business or Creator)
+ * 2. A Facebook Page connected to the Instagram account
+ * 3. A Facebook App with Instagram Graph API permissions
+ * 4. A long-lived access token configured via INSTAGRAM_ACCESS_TOKEN environment variable
+ * 
+ * @see <a href="https://developers.facebook.com/docs/instagram-api/">Instagram Graph API Documentation</a>
  */
 @Startup
 @ApplicationScoped
@@ -35,28 +41,13 @@ public class InstagramPostsFetcher {
 
     private static final Logger LOG = Logger.getLogger(InstagramPostsFetcher.class);
     
-    // Default User-Agent - configurable to avoid outdated browser version issues
-    private static final String DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; TC11SiteBot/1.0)";
-    private static final String INSTAGRAM_PROFILE_URL = "https://www.instagram.com/%s/";
-    
-    // Pattern to find shortcodes in JSON format (used by _sharedData and other embedded data)
-    private static final Pattern JSON_SHORTCODE_PATTERN = Pattern.compile(
-            "\"shortcode\"\\s*:\\s*\"([A-Za-z0-9_-]{10,12})\"");
-    
-    // Pattern to find post URLs in links
-    private static final Pattern POST_URL_PATTERN = Pattern.compile(
-            "/p/([A-Za-z0-9_-]{10,12})");
-    
-    // Pattern to find reel URLs in links  
-    private static final Pattern REEL_URL_PATTERN = Pattern.compile(
-            "/reel/([A-Za-z0-9_-]{10,12})");
+    // Instagram Graph API endpoints
+    private static final String GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
+    private static final String MEDIA_FIELDS = "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp";
     
     private static final int MAX_POSTS = 6;
     private static final int CONNECT_TIMEOUT_SECONDS = 10;
     private static final int REQUEST_TIMEOUT_SECONDS = 30;
-
-    @ConfigProperty(name = "tc11.instagram.username", defaultValue = "tc11assb")
-    String instagramUsername;
 
     @ConfigProperty(name = "tc11.instagram.enabled", defaultValue = "true")
     boolean enabled;
@@ -64,10 +55,23 @@ public class InstagramPostsFetcher {
     @ConfigProperty(name = "tc11.instagram.output-path", defaultValue = "content/instagram.json")
     String outputPath;
     
-    @ConfigProperty(name = "tc11.instagram.user-agent", defaultValue = DEFAULT_USER_AGENT)
-    String userAgent;
+    // Access token from environment variable (recommended) or application.properties
+    @ConfigProperty(name = "tc11.instagram.access-token")
+    Optional<String> accessToken;
+    
+    // Instagram Business Account ID (required for Graph API)
+    @ConfigProperty(name = "tc11.instagram.account-id")
+    Optional<String> accountId;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final HttpClient httpClient;
+
+    public InstagramPostsFetcher() {
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+    }
 
     @PostConstruct
     void init() {
@@ -76,169 +80,120 @@ public class InstagramPostsFetcher {
             return;
         }
 
-        LOG.infof("Attempting to fetch Instagram posts for @%s", instagramUsername);
-        
         List<String> existingPosts = readExistingPosts();
         
+        // Check if Graph API credentials are configured
+        if (accessToken.isEmpty() || accessToken.get().isBlank()) {
+            LOG.info("Instagram Graph API access token not configured. Using existing instagram.json");
+            if (existingPosts.isEmpty()) {
+                LOG.warn("No existing instagram.json found. Instagram gallery will be empty.");
+            }
+            return;
+        }
+        
+        if (accountId.isEmpty() || accountId.get().isBlank()) {
+            LOG.info("Instagram account ID not configured. Using existing instagram.json");
+            if (existingPosts.isEmpty()) {
+                LOG.warn("No existing instagram.json found. Instagram gallery will be empty.");
+            }
+            return;
+        }
+
+        LOG.info("Fetching Instagram posts via Graph API");
+        
         try {
-            List<String> fetchedUrls = fetchInstagramPosts(instagramUsername);
+            List<String> fetchedUrls = fetchInstagramPostsViaGraphApi();
             if (!fetchedUrls.isEmpty()) {
                 writePostsToFile(fetchedUrls);
                 LOG.infof("Successfully fetched and wrote %d Instagram posts", fetchedUrls.size());
             } else if (!existingPosts.isEmpty()) {
-                LOG.infof("No new Instagram posts found, keeping %d existing posts from instagram.json", existingPosts.size());
+                LOG.info("No posts returned from API, keeping existing instagram.json");
             } else {
                 LOG.warn("No Instagram posts available - instagram.json will be empty or missing");
             }
         } catch (Exception e) {
+            LOG.warnf("Failed to fetch Instagram posts via Graph API: %s", e.getMessage());
             if (!existingPosts.isEmpty()) {
-                LOG.infof("Failed to fetch Instagram posts (%s). Using %d existing posts from instagram.json", 
-                        e.getMessage(), existingPosts.size());
-            } else {
-                LOG.warnf("Failed to fetch Instagram posts: %s. No existing instagram.json to fall back to.", e.getMessage());
+                LOG.infof("Using %d existing posts from instagram.json", existingPosts.size());
             }
         }
     }
 
     /**
-     * Fetches Instagram posts from the public profile page.
-     * Parses the HTML to extract post shortcodes.
+     * Fetches Instagram posts using the Graph API.
+     * Requires a valid access token and Instagram Business Account ID.
      */
-    List<String> fetchInstagramPosts(String username) throws IOException, InterruptedException {
-        String profileUrl = String.format(INSTAGRAM_PROFILE_URL, username);
+    List<String> fetchInstagramPostsViaGraphApi() throws IOException, InterruptedException {
+        String token = accessToken.orElseThrow(() -> new IllegalStateException("Access token not configured"));
+        String igAccountId = accountId.orElseThrow(() -> new IllegalStateException("Account ID not configured"));
         
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
+        // Build the API URL to fetch recent media
+        String apiUrl = String.format("%s/%s/media?fields=%s&limit=%d&access_token=%s",
+                GRAPH_API_BASE,
+                URLEncoder.encode(igAccountId, StandardCharsets.UTF_8),
+                URLEncoder.encode(MEDIA_FIELDS, StandardCharsets.UTF_8),
+                MAX_POSTS,
+                URLEncoder.encode(token, StandardCharsets.UTF_8));
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(profileUrl))
-                .header("User-Agent", userAgent)
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-                .header("Accept-Language", "en-US,en;q=0.5")
-                .header("Sec-Fetch-Dest", "document")
-                .header("Sec-Fetch-Mode", "navigate")
-                .header("Sec-Fetch-Site", "none")
+                .uri(URI.create(apiUrl))
+                .header("Accept", "application/json")
                 .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
                 .GET()
                 .build();
 
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         
         if (response.statusCode() != 200) {
-            LOG.warnf("Instagram returned status %d for profile %s", response.statusCode(), username);
-            return List.of();
+            String errorMessage = parseGraphApiError(response.body());
+            throw new IOException("Graph API returned status " + response.statusCode() + ": " + errorMessage);
         }
 
-        String html = response.body();
-        return extractPostUrls(html);
+        return parseMediaResponse(response.body());
     }
 
     /**
-     * Extracts Instagram post URLs from the HTML page.
-     * Tries multiple extraction methods for robustness.
-     * Note: Instagram shortcodes work with both /p/ and /reel/ URLs,
-     * but we use /p/ which works for both post types.
+     * Parses the Graph API media response and extracts post permalinks.
      */
-    List<String> extractPostUrls(String html) {
-        Set<String> shortcodes = new LinkedHashSet<>();
-        
-        // Method 1: Try parsing embedded JSON data (window._sharedData)
-        extractFromSharedData(html, shortcodes);
-        
-        // Method 2: Try parsing require("ScheduledServerJS") data
-        extractFromScheduledServerJS(html, shortcodes);
-        
-        // Method 3: Fallback - scan for shortcodes directly in HTML/JSON
-        extractFromPatterns(html, shortcodes);
-        
-        // Convert shortcodes to full URLs
-        // Instagram /p/ URLs work for both posts and reels
+    List<String> parseMediaResponse(String jsonResponse) {
         List<String> postUrls = new ArrayList<>();
-        for (String shortcode : shortcodes) {
-            if (postUrls.size() >= MAX_POSTS) break;
-            postUrls.add("https://www.instagram.com/p/" + shortcode);
+        
+        try {
+            JsonNode root = objectMapper.readTree(jsonResponse);
+            JsonNode data = root.path("data");
+            
+            if (data.isArray()) {
+                for (JsonNode media : data) {
+                    String permalink = media.path("permalink").asText();
+                    if (permalink != null && !permalink.isEmpty()) {
+                        postUrls.add(permalink);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("Failed to parse Graph API response: %s", e.getMessage());
         }
         
         return postUrls;
     }
 
-    private void extractFromSharedData(String html, Set<String> shortcodes) {
-        Pattern sharedDataPattern = Pattern.compile("window\\._sharedData\\s*=\\s*(\\{.*?\\})\\s*;", Pattern.DOTALL);
-        Matcher matcher = sharedDataPattern.matcher(html);
-        
-        if (matcher.find()) {
-            try {
-                String jsonData = matcher.group(1);
-                JsonNode root = objectMapper.readTree(jsonData);
-                
-                // Navigate to the posts in the JSON structure
-                JsonNode edges = root.path("entry_data")
-                        .path("ProfilePage")
-                        .path(0)
-                        .path("graphql")
-                        .path("user")
-                        .path("edge_owner_to_timeline_media")
-                        .path("edges");
-                
-                if (edges.isArray()) {
-                    for (JsonNode edge : edges) {
-                        String shortcode = edge.path("node").path("shortcode").asText();
-                        if (shortcode != null && !shortcode.isEmpty()) {
-                            shortcodes.add(shortcode);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                LOG.debugf("Failed to parse _sharedData: %s", e.getMessage());
-            }
-        }
-    }
-
-    private void extractFromScheduledServerJS(String html, Set<String> shortcodes) {
-        // Modern Instagram pages use ScheduledServerJS with encoded JSON
-        // This pattern may change as Instagram updates their internal API
-        // Multiple fallback patterns to improve resilience
+    /**
+     * Parses error message from Graph API error response.
+     */
+    String parseGraphApiError(String jsonResponse) {
         try {
-            // Try primary pattern
-            Pattern jsonPattern = Pattern.compile("\"xdt_api__v1__feed__user_timeline_graphql_connection\".*?\"edges\"\\s*:\\s*\\[(.*?)\\]", Pattern.DOTALL);
-            Matcher matcher = jsonPattern.matcher(html);
-            
-            if (matcher.find()) {
-                String edgesJson = matcher.group(1);
-                Matcher shortcodeMatcher = Pattern.compile("\"code\"\\s*:\\s*\"([A-Za-z0-9_-]+)\"").matcher(edgesJson);
-                while (shortcodeMatcher.find()) {
-                    String code = shortcodeMatcher.group(1);
-                    if (code.length() >= 10 && code.length() <= 12) {
-                        shortcodes.add(code);
-                    }
-                }
+            JsonNode root = objectMapper.readTree(jsonResponse);
+            JsonNode error = root.path("error");
+            if (!error.isMissingNode()) {
+                String message = error.path("message").asText("Unknown error");
+                String type = error.path("type").asText("");
+                int code = error.path("code").asInt(0);
+                return String.format("%s (type: %s, code: %d)", message, type, code);
             }
         } catch (Exception e) {
-            // Pattern matching failed - this is expected if Instagram changes their page structure
-            LOG.debugf("Failed to parse ScheduledServerJS data: %s", e.getMessage());
+            // Ignore parsing errors
         }
-    }
-
-    private void extractFromPatterns(String html, Set<String> shortcodes) {
-        // Extract from JSON shortcode patterns
-        Matcher jsonMatcher = JSON_SHORTCODE_PATTERN.matcher(html);
-        while (jsonMatcher.find()) {
-            shortcodes.add(jsonMatcher.group(1));
-        }
-        
-        // Extract from post URLs (/p/)
-        Matcher postMatcher = POST_URL_PATTERN.matcher(html);
-        while (postMatcher.find()) {
-            shortcodes.add(postMatcher.group(1));
-        }
-        
-        // Extract from reel URLs (/reel/)
-        Matcher reelMatcher = REEL_URL_PATTERN.matcher(html);
-        while (reelMatcher.find()) {
-            shortcodes.add(reelMatcher.group(1));
-        }
+        return jsonResponse;
     }
 
     /**
@@ -265,5 +220,14 @@ public class InstagramPostsFetcher {
             }
         }
         return List.of();
+    }
+    
+    // Package-private methods for testing
+    
+    /**
+     * For testing: parse media response.
+     */
+    List<String> testParseMediaResponse(String jsonResponse) {
+        return parseMediaResponse(jsonResponse);
     }
 }
