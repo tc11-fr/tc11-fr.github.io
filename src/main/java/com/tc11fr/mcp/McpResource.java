@@ -1,5 +1,10 @@
 package com.tc11fr.mcp;
 
+import java.util.Map;
+
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+
+import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -21,6 +26,10 @@ import jakarta.ws.rs.core.Response;
 @Consumes(MediaType.APPLICATION_JSON)
 public class McpResource {
 
+    @Inject
+    @ConfigProperty(name = "mcp.server.enabled", defaultValue = "true")
+    boolean mcpEnabled;
+
     /**
      * GET /mcp - Returns the MCP server status.
      * This endpoint allows agents to check if the MCP server is running and available.
@@ -33,7 +42,7 @@ public class McpResource {
             "ok",
             "TC11 MCP Server",
             "1.0.0",
-            true
+            mcpEnabled
         );
     }
 
@@ -67,11 +76,12 @@ public class McpResource {
 
     /**
      * MCP Request POJO for incoming agent messages.
+     * The params field uses Map for type safety when handling structured data.
      */
     public record McpRequest(
         String id,
         String method,
-        Object params
+        Map<String, Object> params
     ) {}
 
     /**
