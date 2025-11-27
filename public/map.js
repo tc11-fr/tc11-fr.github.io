@@ -31,6 +31,8 @@ if(typeof L !== 'undefined' && document.getElementById('map')) {
   });
 
   // Ajuster la vue pour afficher tous les marqueurs
-  const group = L.featureGroup(markers);
-  map.fitBounds(group.getBounds().pad(0.1));
+  if (markers.length > 0) {
+    const group = L.featureGroup(markers);
+    map.fitBounds(group.getBounds().pad(0.1));
+  }
 }
