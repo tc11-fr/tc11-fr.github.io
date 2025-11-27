@@ -63,13 +63,10 @@ tc11-fr.github.io/
 
 ## 🤝 Contribuer
 
-Les contributions sont les bienvenues ! N'hésitez pas à :
+Les contributions sont les bienvenues ! Consultez le [guide de contribution](CONTRIBUTING.md) pour les détails.
 
-1. Forker le projet
-2. Créer une branche pour votre fonctionnalité (`git checkout -b feature/ma-fonctionnalite`)
-3. Commiter vos changements (`git commit -m 'Ajoute ma fonctionnalité'`)
-4. Pousser la branche (`git push origin feature/ma-fonctionnalite`)
-5. Ouvrir une Pull Request
+> **Note :** Les titres de Pull Request doivent suivre la convention [Conventional Commits](https://www.conventionalcommits.org/).
+> Exemple : `feat: Ajoute une nouvelle page`
 
 ## 📧 Contact
 
