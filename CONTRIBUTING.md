@@ -1,10 +1,10 @@
-# Guide de contribution
+# Contributing Guide
 
-Merci de contribuer au site du TC11 ! 🎾
+Thank you for contributing to the TC11 website! 🎾
 
-## 📝 Convention pour les titres de Pull Request
+## 📝 Pull Request Title Convention
 
-Tous les titres de Pull Request doivent suivre la convention **Conventional Commits**.
+All Pull Request titles must follow the **Conventional Commits** convention and be written **in English**.
 
 ### Format
 
@@ -12,43 +12,44 @@ Tous les titres de Pull Request doivent suivre la convention **Conventional Comm
 <type>: <description>
 ```
 
-ou avec un scope optionnel :
+or with an optional scope:
 
 ```
 <type>(<scope>): <description>
 ```
 
-### Types autorisés
+### Allowed Types
 
 | Type | Description |
 |------|-------------|
-| `feat` | Nouvelle fonctionnalité |
-| `fix` | Correction de bug |
+| `feat` | New feature |
+| `fix` | Bug fix |
 | `docs` | Documentation |
-| `style` | Mise en forme (pas de changement de code) |
-| `refactor` | Refactorisation du code |
-| `perf` | Amélioration des performances |
-| `test` | Ajout ou modification de tests |
-| `build` | Changements du système de build |
-| `ci` | Configuration CI/CD |
-| `chore` | Autres changements |
-| `revert` | Annulation d'un commit |
+| `style` | Formatting (no code change) |
+| `refactor` | Code refactoring |
+| `perf` | Performance improvement |
+| `test` | Adding or updating tests |
+| `build` | Build system changes |
+| `ci` | CI/CD configuration |
+| `chore` | Other changes |
+| `revert` | Revert a commit |
 
-### Exemples
+### Examples
 
-✅ **Valides :**
-- `feat: Ajoute une nouvelle page d'actualités`
-- `fix(navigation): Corrige le menu mobile`
-- `docs: Met à jour le README`
+✅ **Valid:**
+- `feat: Add new news page`
+- `fix(navigation): Fix mobile menu`
+- `docs: Update README`
 
-❌ **Invalides :**
-- `Ajoute une nouvelle page` (pas de type)
-- `FEAT: nouvelle page` (type en majuscules)
+❌ **Invalid:**
+- `Add new page` (missing type)
+- `FEAT: new page` (type in uppercase)
+- `feat: Ajoute une page` (not in English)
 
-## 🚀 Processus de contribution
+## 🚀 Contribution Process
 
-1. Forker le projet
-2. Créer une branche (`git checkout -b feature/ma-fonctionnalite`)
-3. Commiter vos changements avec un message conventionnel
-4. Pousser la branche (`git push origin feature/ma-fonctionnalite`)
-5. Ouvrir une Pull Request avec un titre conventionnel
+1. Fork the project
+2. Create a branch (`git checkout -b feature/my-feature`)
+3. Commit your changes with a conventional message
+4. Push the branch (`git push origin feature/my-feature`)
+5. Open a Pull Request with a conventional title in English

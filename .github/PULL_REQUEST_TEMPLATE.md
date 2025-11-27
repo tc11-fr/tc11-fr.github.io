@@ -1,8 +1,8 @@
 ## Description
 
-<!-- Décrivez brièvement les changements apportés -->
+<!-- Briefly describe the changes made -->
 
 ## Checklist
 
-- [ ] Le titre de la PR suit la convention [Conventional Commits](../CONTRIBUTING.md) (ex: `feat: Ajoute une fonctionnalité`)
-- [ ] J'ai testé mes changements localement
+- [ ] PR title follows [Conventional Commits](../CONTRIBUTING.md) convention **in English** (e.g., `feat: Add new feature`)
+- [ ] I have tested my changes locally
