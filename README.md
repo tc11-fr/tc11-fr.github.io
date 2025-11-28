@@ -6,7 +6,7 @@ Site web officiel du **TC11**, le Tennis Club du 11e arrondissement de Paris.
 
 ## 🌐 Site en ligne
 
-Le site est accessible à l'adresse : [https://tc11-fr.github.io](https://tc11-fr.github.io)
+Le site est accessible à l'adresse : [https://tc11.fr](https://tc11.fr)
 
 ## 🏗️ Technologies utilisées
 
@@ -25,8 +25,8 @@ Le site est accessible à l'adresse : [https://tc11-fr.github.io](https://tc11-f
 ### Cloner le dépôt
 
 ```bash
-git clone https://github.com/tc11-fr/tc11-fr.github.io.git
-cd tc11-fr.github.io
+git clone https://github.com/tc11-fr/tc11.fr.git
+cd tc11.fr
 ```
 
 ### Lancer le serveur de développement
@@ -48,7 +48,7 @@ Les fichiers générés se trouvent dans le dossier `target/roq/`.
 ## 📁 Structure du projet
 
 ```
-tc11-fr.github.io/
+tc11.fr/
 ├── content/           # Contenu du site (pages, actualités)
 │   ├── index.html     # Page d'accueil
 │   ├── actus.json     # Liste des actualités
@@ -70,7 +70,7 @@ Les contributions sont les bienvenues ! Consultez le [guide de contribution](CON
 
 ## 📧 Contact
 
-- **Site web** : [https://tc11-fr.github.io](https://tc11-fr.github.io)
+- **Site web** : [https://tc11.fr](https://tc11.fr)
 - **Instagram** : [@tc11assb](https://www.instagram.com/tc11assb/)
 
 ## 📄 Licence
