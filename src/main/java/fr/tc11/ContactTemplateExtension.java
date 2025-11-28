@@ -1,5 +1,6 @@
 package fr.tc11;
 
+import io.quarkus.arc.Unremovable;
 import io.quarkus.qute.TemplateExtension;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -24,6 +25,7 @@ public class ContactTemplateExtension {
     }
 
     @Singleton
+    @Unremovable
     public static class ContactConfig {
         @ConfigProperty(name = "tc11.contact.email")
         String email;
