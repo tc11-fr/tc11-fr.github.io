@@ -16,6 +16,9 @@ import java.util.List;
 @TemplateExtension(namespace = "instagram")
 public class InstagramTemplateExtension {
 
+    // Cache the fetcher instance since Instagram posts are fetched once at startup
+    private static volatile InstagramPostsFetcher cachedFetcher;
+
     /**
      * Returns the list of Instagram post URLs.
      * Used in Qute templates to generate instagram.json content.
@@ -23,7 +26,9 @@ public class InstagramTemplateExtension {
      * @return list of Instagram post URLs
      */
     public static List<String> posts() {
-        InstagramPostsFetcher fetcher = CDI.current().select(InstagramPostsFetcher.class).get();
-        return fetcher.getInstagramPosts();
+        if (cachedFetcher == null) {
+            cachedFetcher = CDI.current().select(InstagramPostsFetcher.class).get();
+        }
+        return cachedFetcher.getInstagramPosts();
     }
 }
