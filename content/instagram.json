@@ -1,0 +1,5 @@
+[
+{#for post in instagram:posts}
+  "{post}"{#if !post_isLast},{/if}
+{/for}
+]

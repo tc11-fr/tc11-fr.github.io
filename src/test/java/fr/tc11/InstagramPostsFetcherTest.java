@@ -6,8 +6,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -26,17 +24,6 @@ class InstagramPostsFetcherTest {
         // The fetcher should always return a non-null list
         List<String> posts = fetcher.getInstagramPosts();
         assertNotNull(posts);
-    }
-
-    @Test
-    void testInstagramJsonEndpoint() {
-        // Test that the REST endpoint returns valid JSON array
-        given()
-            .when().get("/instagram.json")
-            .then()
-            .statusCode(200)
-            .contentType("application/json")
-            .body("$", instanceOf(List.class));
     }
 
     // ========== Graph API Response Parsing Tests ==========

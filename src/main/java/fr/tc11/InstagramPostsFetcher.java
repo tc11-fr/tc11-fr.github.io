@@ -36,8 +36,8 @@ import java.util.regex.Pattern;
 /**
  * Service to fetch Instagram posts during site generation.
  * 
- * Posts are kept in memory and served via REST endpoint to avoid issues with
- * static file generation not picking up file changes.
+ * Posts are kept in memory and exposed via {@link InstagramTemplateExtension}
+ * to Qute templates, allowing instagram.json to be generated dynamically.
  * 
  * Uses the following fallback chain:
  * 1. RSS Bridge (no authentication required, simple HTTP request)
@@ -170,7 +170,7 @@ public class InstagramPostsFetcher {
     
     /**
      * Returns the list of Instagram post URLs.
-     * This is used by the REST endpoint to serve the posts.
+     * This is used by the Qute template extension to expose posts to templates.
      * 
      * @return unmodifiable list of Instagram post URLs
      */
