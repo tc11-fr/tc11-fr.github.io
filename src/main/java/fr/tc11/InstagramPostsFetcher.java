@@ -94,8 +94,8 @@ public class InstagramPostsFetcher {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient;
     
-    // In-memory storage for fetched posts
-    private volatile List<String> instagramPosts = Collections.emptyList();
+    // In-memory storage for fetched posts (initialized once in @PostConstruct)
+    private List<String> instagramPosts = Collections.emptyList();
 
     public InstagramPostsFetcher() {
         this.httpClient = HttpClient.newBuilder()
