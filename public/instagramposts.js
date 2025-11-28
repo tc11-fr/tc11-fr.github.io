@@ -5,9 +5,12 @@ if(document.getElementById('maj-date'))
   document.getElementById('maj-date').textContent = dayjs().format('DD MMM YYYY');
 
 // Configuration Instagram
+// Note: This username is public (visible in site content and social links)
 const INSTAGRAM_USERNAME = 'tc11assb';
+// Uses the same RSS Bridge endpoint as server-side fetching (see InstagramPostsFetcher.java)
 const RSS_BRIDGE_URL = `https://rss-bridge.org/bridge01/?action=display&bridge=InstagramBridge&context=Username&u=${encodeURIComponent(INSTAGRAM_USERNAME)}&media_type=all&direct_links=on&format=Json`;
 const MAX_POSTS = 6;
+const MAX_EMBED_RETRIES = 20; // Max retries for Instagram embed loading (6 seconds total)
 
 /**
  * Parse RSS Bridge JSON response and extract post URLs.
@@ -104,12 +107,16 @@ function renderInstagramPosts(posts) {
     grid.appendChild(wrapper);
   });
   
-  // Si des posts ont été ajoutés, déclenche le rendu embed
+  // Si des posts ont été ajoutés, déclenche le rendu embed avec limite de tentatives
+  let embedRetries = 0;
   function processEmbedsWhenReady(){
     if (window.instgrm && window.instgrm.Embeds && typeof window.instgrm.Embeds.process === 'function'){
       window.instgrm.Embeds.process();
-    } else {
+    } else if (embedRetries < MAX_EMBED_RETRIES) {
+      embedRetries++;
       setTimeout(processEmbedsWhenReady, 300);
+    } else {
+      console.warn('Instagram embed script not loaded after max retries');
     }
   }
   if (posts.length) processEmbedsWhenReady();
