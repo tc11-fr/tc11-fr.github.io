@@ -139,19 +139,13 @@ layout: layouts/page.html
   <div class="max-w-6xl mx-auto px-4">
       <h3 class="text-2xl font-extrabold mb-3">Contact</h3>
       <p class="text-slate-600 mb-6">Une question ? Envie de rejoindre le club ?</p>
-      <div class="rounded-xl overflow-hidden border shadow-soft bg-white">
-        <!-- Remplace l'URL ci-dessous par celle de ton Google Forms personnalisé -->
-        <div style="width:100%; min-width:0;">
-          <iframe 
-            src="https://docs.google.com/forms/d/e/1FAIpQLSdZt7SDzKeM0PVMJkpO0dtWv3LTZjGrRa5LxIqE12ATO8lDfA/viewform?embedded=true"
-            style="width:100%; min-width:0; height:950px; border:0; display:block; margin:0 auto;"
-            allowfullscreen
-            loading="lazy"
-            referrerpolicy="no-referrer-when-downgrade"
-            >Chargement…</iframe>
-        </div>
+      <div class="flex flex-col items-center gap-4">
+        <a href="mailto:{contact:email}" class="btn btn-primary inline-flex items-center gap-2">
+          <span class="iconify" data-icon="mdi:email"></span>
+          Nous contacter par email
+        </a>
+        <p class="text-sm text-slate-500">{contact:email}</p>
       </div>
-      <p class="text-xs text-slate-400 mt-2">Ce formulaire est hébergé par Google Forms.</p>
     </div>
   </section>
 
