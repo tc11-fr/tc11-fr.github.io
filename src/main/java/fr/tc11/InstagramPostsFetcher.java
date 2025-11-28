@@ -108,7 +108,7 @@ public class InstagramPostsFetcher {
     void init() {
         if (!enabled) {
             LOG.info("Instagram posts fetcher is disabled");
-            // Load fallback posts even when disabled
+            // Load fallback posts even when disabled so the REST endpoint always returns data
             instagramPosts = readFallbackPosts();
             return;
         }
