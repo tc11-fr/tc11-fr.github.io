@@ -1,0 +1,68 @@
+name: RSS Feed Trigger
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-rss:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch and check RSS feed
+        id: rss
+        run: |
+          set -e
+          URL="https://rss-bridge.org/bridge01/?action=display&bridge=InstagramBridge&context=Username&u=tc11assb&media_type=all&direct_links=on&format=Json"
+          JSON=$(curl -sSL --max-time 30 --retry 3 --retry-delay 5 "$URL")
+          
+          # Extract identifier from first item
+          IDENTIFIER=$(echo "$JSON" | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+          except json.JSONDecodeError:
+              print('')
+              sys.exit(0)
+          items = data.get('items', [])
+          if not items:
+              print('')
+              sys.exit(0)
+          first = items[0]
+          for key in ('uri', 'link', 'permalink', 'id', 'title'):
+              if key in first and first[key]:
+                  print(first[key])
+                  sys.exit(0)
+          print(json.dumps(first))
+          ")
+          
+          echo "identifier=$IDENTIFIER" >> "$GITHUB_OUTPUT"
+          
+          # Check if file exists and compare
+          LAST_FILE=".github/rss-last.txt"
+          if [ -f "$LAST_FILE" ]; then
+            LAST=$(cat "$LAST_FILE")
+          else
+            LAST=""
+          fi
+          
+          if [ "$IDENTIFIER" != "$LAST" ] && [ -n "$IDENTIFIER" ]; then
+            echo "$IDENTIFIER" > "$LAST_FILE"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push if changed
+        if: steps.rss.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/rss-last.txt
+          git commit -m "chore(ci): update rss last-seen: ${{ steps.rss.outputs.identifier }}"
+          git push
