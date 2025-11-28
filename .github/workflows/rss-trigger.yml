@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   check-rss:
@@ -66,3 +67,9 @@ jobs:
           git add .github/rss-last.txt
           git commit -m "chore(ci): update rss last-seen: ${{ steps.rss.outputs.identifier }}"
           git push
+
+      - name: Trigger deploy workflow
+        if: steps.rss.outputs.changed == 'true'
+        run: gh workflow run deploy.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
