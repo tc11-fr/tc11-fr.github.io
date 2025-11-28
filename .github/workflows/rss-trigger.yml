@@ -2,7 +2,11 @@ name: RSS Feed Trigger
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    # Two UTC times to cover Europe/Paris DST transitions:
+    # - 16:00 UTC corresponds to 18:00 in Paris when Paris is UTC+2 (CEST)
+    # - 17:00 UTC corresponds to 18:00 in Paris when Paris is UTC+1 (CET)
+    - cron: '0 16 * * *'
+    - cron: '0 17 * * *'
   workflow_dispatch:
 
 permissions:
@@ -14,6 +18,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Ensure this run is 18:00 Europe/Paris
+        run: |
+          # GitHub cron uses UTC; to ensure the workflow proceeds only once per day
+          # at 18:00 Europe/Paris (handling DST), run at both possible UTC times
+          # and continue only when the current Paris hour is 18.
+          if [ "$(TZ=Europe/Paris date +'%H')" != "18" ]; then
+            echo "Not 18:00 Europe/Paris; exiting early."
+            exit 0
+          fi
 
       - name: Fetch and check RSS feed
         id: rss
