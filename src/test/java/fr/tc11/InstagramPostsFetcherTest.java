@@ -17,6 +17,15 @@ class InstagramPostsFetcherTest {
     @Inject
     InstagramPostsFetcher fetcher;
 
+    // ========== In-Memory Posts Tests ==========
+
+    @Test
+    void testGetInstagramPostsReturnsNonNull() {
+        // The fetcher should always return a non-null list
+        List<String> posts = fetcher.getInstagramPosts();
+        assertNotNull(posts);
+    }
+
     // ========== Graph API Response Parsing Tests ==========
 
     @Test

@@ -16,16 +16,16 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -36,11 +36,14 @@ import java.util.regex.Pattern;
 /**
  * Service to fetch Instagram posts during site generation.
  * 
+ * Posts are kept in memory and exposed via {@link InstagramTemplateExtension}
+ * to Qute templates, allowing instagram.json to be generated dynamically.
+ * 
  * Uses the following fallback chain:
  * 1. RSS Bridge (no authentication required, simple HTTP request)
  * 2. Instagram Graph API (if credentials configured)
  * 3. Headless browser scraping via Playwright (if no API credentials)
- * 4. Existing instagram.json file (if all else fails)
+ * 4. Existing instagram.json file from classpath (if all else fails)
  * 
  * @see <a href="https://rss-bridge.org/">RSS Bridge</a>
  * @see <a href="https://developers.facebook.com/docs/instagram-api/">Instagram Graph API Documentation</a>
@@ -70,12 +73,12 @@ public class InstagramPostsFetcher {
     private static final int REQUEST_TIMEOUT_SECONDS = 30;
     private static final int BROWSER_TIMEOUT_MS = 30000;
     private static final int BROWSER_CONTENT_LOAD_WAIT_MS = 2000;
+    
+    // Classpath resource path for fallback instagram.json
+    private static final String FALLBACK_RESOURCE_PATH = "/instagram.json";
 
     @ConfigProperty(name = "tc11.instagram.enabled", defaultValue = "true")
     boolean enabled;
-
-    @ConfigProperty(name = "tc11.instagram.output-path", defaultValue = "content/instagram.json")
-    String outputPath;
     
     @ConfigProperty(name = "tc11.instagram.username", defaultValue = "tc11assb")
     String instagramUsername;
@@ -90,6 +93,9 @@ public class InstagramPostsFetcher {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient;
+    
+    // In-memory storage for fetched posts (initialized once in @PostConstruct)
+    private List<String> instagramPosts = Collections.emptyList();
 
     public InstagramPostsFetcher() {
         this.httpClient = HttpClient.newBuilder()
@@ -102,10 +108,12 @@ public class InstagramPostsFetcher {
     void init() {
         if (!enabled) {
             LOG.info("Instagram posts fetcher is disabled");
+            // Load fallback posts even when disabled so the REST endpoint always returns data
+            instagramPosts = readFallbackPosts();
             return;
         }
 
-        List<String> existingPosts = readExistingPosts();
+        List<String> fallbackPosts = readFallbackPosts();
         List<String> fetchedUrls = null;
         
         // Try RSS Bridge first (no authentication required)
@@ -113,7 +121,7 @@ public class InstagramPostsFetcher {
         try {
             fetchedUrls = fetchInstagramPostsViaRssBridge();
             if (!fetchedUrls.isEmpty()) {
-                writePostsToFile(fetchedUrls);
+                instagramPosts = Collections.unmodifiableList(new ArrayList<>(fetchedUrls));
                 LOG.infof("Successfully fetched %d Instagram posts via RSS Bridge", fetchedUrls.size());
                 return;
             }
@@ -127,7 +135,7 @@ public class InstagramPostsFetcher {
             try {
                 fetchedUrls = fetchInstagramPostsViaGraphApi();
                 if (!fetchedUrls.isEmpty()) {
-                    writePostsToFile(fetchedUrls);
+                    instagramPosts = Collections.unmodifiableList(new ArrayList<>(fetchedUrls));
                     LOG.infof("Successfully fetched %d Instagram posts via Graph API", fetchedUrls.size());
                     return;
                 }
@@ -142,7 +150,7 @@ public class InstagramPostsFetcher {
         try {
             fetchedUrls = fetchInstagramPostsViaHeadlessBrowser();
             if (!fetchedUrls.isEmpty()) {
-                writePostsToFile(fetchedUrls);
+                instagramPosts = Collections.unmodifiableList(new ArrayList<>(fetchedUrls));
                 LOG.infof("Successfully fetched %d Instagram posts via headless browser", fetchedUrls.size());
                 return;
             }
@@ -150,12 +158,24 @@ public class InstagramPostsFetcher {
             LOG.warnf("Headless browser scraping failed: %s", e.getMessage());
         }
         
-        // Final fallback to existing instagram.json
-        if (!existingPosts.isEmpty()) {
-            LOG.infof("Using %d existing posts from instagram.json", existingPosts.size());
+        // Final fallback to existing instagram.json from classpath
+        if (!fallbackPosts.isEmpty()) {
+            instagramPosts = Collections.unmodifiableList(new ArrayList<>(fallbackPosts));
+            LOG.infof("Using %d fallback posts from instagram.json", fallbackPosts.size());
         } else {
-            LOG.warn("No Instagram posts available - instagram.json will be empty or missing");
+            LOG.warn("No Instagram posts available - instagram.json will be empty");
+            instagramPosts = Collections.emptyList();
         }
+    }
+    
+    /**
+     * Returns the list of Instagram post URLs.
+     * This is used by the Qute template extension to expose posts to templates.
+     * 
+     * @return unmodifiable list of Instagram post URLs
+     */
+    public List<String> getInstagramPosts() {
+        return instagramPosts;
     }
 
     /**
@@ -379,27 +399,16 @@ public class InstagramPostsFetcher {
     }
 
     /**
-     * Writes the fetched post URLs to the instagram.json file.
+     * Reads fallback posts from instagram.json in the classpath.
+     * This is used when all fetching methods fail.
      */
-    void writePostsToFile(List<String> postUrls) throws IOException {
-        Path path = Path.of(outputPath);
-        String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(postUrls);
-        Files.writeString(path, json + "\n");
-        LOG.infof("Wrote Instagram posts to %s", path.toAbsolutePath());
-    }
-
-    /**
-     * Reads existing posts from instagram.json if it exists.
-     */
-    List<String> readExistingPosts() {
-        Path path = Path.of(outputPath);
-        if (Files.exists(path)) {
-            try {
-                String content = Files.readString(path);
-                return objectMapper.readValue(content, new TypeReference<List<String>>() {});
-            } catch (IOException e) {
-                LOG.debugf("Failed to read existing instagram.json: %s", e.getMessage());
+    List<String> readFallbackPosts() {
+        try (InputStream is = getClass().getResourceAsStream(FALLBACK_RESOURCE_PATH)) {
+            if (is != null) {
+                return objectMapper.readValue(is, new TypeReference<List<String>>() {});
             }
+        } catch (IOException e) {
+            LOG.debugf("Failed to read fallback instagram.json from classpath: %s", e.getMessage());
         }
         return List.of();
     }
