@@ -1,8 +1,8 @@
 name: Roq Site Preview PR
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
   repository_dispatch:
     types: [roq-preview]
 
@@ -11,19 +11,27 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: roq-preview-${{ github.event.pull_request.number || github.run_id }}
+  group: roq-preview-${{ github.event.issue.number || github.event.client_payload.pr || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   preview:
     runs-on: ubuntu-latest
+    # Run only if:
+    # - It's a /preview comment on a pull request (not an issue)
+    # - Or it's a repository_dispatch event
+    if: >
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/preview')) ||
+      github.event_name == 'repository_dispatch'
 
     steps:
       - name: Resolve PR number
         shell: bash
         run: |
-          echo "PR_NUMBER=${{ github.event.pull_request.number || github.event.client_payload.pr }}" >> $GITHUB_ENV
-          echo "Resolved PR_NUMBER=${{ github.event.pull_request.number || github.event.client_payload.pr }}"
+          echo "PR_NUMBER=${{ github.event.issue.number || github.event.client_payload.pr }}" >> $GITHUB_ENV
+          echo "Resolved PR_NUMBER=${{ github.event.issue.number || github.event.client_payload.pr }}"
 
       - name: Stop if PR number is missing
         if: ${{ env.PR_NUMBER == '' }}
