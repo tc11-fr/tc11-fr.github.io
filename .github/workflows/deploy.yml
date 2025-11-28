@@ -10,6 +10,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      
+      - name: Install Playwright browser dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwoff1 libevent-2.1-7t64 libopus0 \
+            libgstreamer-plugins-base1.0-0 libgstreamer-gl1.0-0 \
+            libgstreamer-plugins-bad1.0-0 libharfbuzz-icu0 \
+            libsecret-1-0 libhyphen0 libgles2 gstreamer1.0-libav \
+            libavif16 libmanette-0.2-0 libvpx9 libflite1 || true
+      
       - name: Generate Roq Site
         uses: quarkiverse/quarkus-roq@v1
         with:
