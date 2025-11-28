@@ -241,4 +241,111 @@ class InstagramPostsFetcherTest {
         // Should be limited to MAX_POSTS (6)
         assertEquals(6, urls.size());
     }
+
+    // ========== RSS Bridge Response Parsing Tests ==========
+
+    @Test
+    void testParseRssBridgeResponseWithValidData() {
+        // Simulated RSS Bridge JSON Feed response
+        String jsonResponse = """
+            {
+                "version": "https://jsonfeed.org/version/1",
+                "title": "tc11assb - Instagram Bridge",
+                "home_page_url": "https://www.instagram.com/tc11assb/",
+                "items": [
+                    {
+                        "id": "https://www.instagram.com/p/DMc_B-kNmxf/",
+                        "title": "Retour sur notre belle fin de saison !",
+                        "url": "https://www.instagram.com/p/DMc_B-kNmxf/",
+                        "date_modified": "2025-07-23T14:00:56+00:00"
+                    },
+                    {
+                        "id": "https://www.instagram.com/p/DK5HR3bgmSY/",
+                        "title": "Another post",
+                        "url": "https://www.instagram.com/p/DK5HR3bgmSY/",
+                        "date_modified": "2025-07-20T10:00:00+00:00"
+                    }
+                ]
+            }
+            """;
+
+        List<String> urls = fetcher.testParseRssBridgeResponse(jsonResponse);
+
+        assertNotNull(urls);
+        assertEquals(2, urls.size());
+        assertEquals("https://www.instagram.com/p/DMc_B-kNmxf/", urls.get(0));
+        assertEquals("https://www.instagram.com/p/DK5HR3bgmSY/", urls.get(1));
+    }
+
+    @Test
+    void testParseRssBridgeResponseWithIdOnly() {
+        // RSS Bridge response where URL is only in the id field
+        String jsonResponse = """
+            {
+                "version": "https://jsonfeed.org/version/1",
+                "title": "tc11assb - Instagram Bridge",
+                "items": [
+                    {
+                        "id": "https://www.instagram.com/p/ABC123DEF45/",
+                        "title": "Test post"
+                    }
+                ]
+            }
+            """;
+
+        List<String> urls = fetcher.testParseRssBridgeResponse(jsonResponse);
+
+        assertNotNull(urls);
+        assertEquals(1, urls.size());
+        assertEquals("https://www.instagram.com/p/ABC123DEF45/", urls.get(0));
+    }
+
+    @Test
+    void testParseRssBridgeResponseWithEmptyItems() {
+        String jsonResponse = """
+            {
+                "version": "https://jsonfeed.org/version/1",
+                "title": "tc11assb - Instagram Bridge",
+                "items": []
+            }
+            """;
+
+        List<String> urls = fetcher.testParseRssBridgeResponse(jsonResponse);
+
+        assertNotNull(urls);
+        assertTrue(urls.isEmpty());
+    }
+
+    @Test
+    void testParseRssBridgeResponseWithInvalidJson() {
+        String invalidJson = "not valid json";
+
+        List<String> urls = fetcher.testParseRssBridgeResponse(invalidJson);
+
+        assertNotNull(urls);
+        assertTrue(urls.isEmpty());
+    }
+
+    @Test
+    void testParseRssBridgeResponseMaxLimit() {
+        // Response with more than MAX_POSTS items
+        StringBuilder json = new StringBuilder("""
+            {
+                "version": "https://jsonfeed.org/version/1",
+                "items": [
+            """);
+        for (int i = 0; i < 10; i++) {
+            if (i > 0) json.append(",");
+            json.append(String.format("""
+                {"id": "https://www.instagram.com/p/SHORTCODE%02d/", "url": "https://www.instagram.com/p/SHORTCODE%02d/"}
+            """, i, i));
+        }
+        json.append("]}");
+
+        List<String> urls = fetcher.testParseRssBridgeResponse(json.toString());
+
+        assertNotNull(urls);
+        // Should be limited to MAX_POSTS (6)
+        assertEquals(6, urls.size());
+    }
 }

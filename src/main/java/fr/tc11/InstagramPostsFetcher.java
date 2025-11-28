@@ -37,10 +37,12 @@ import java.util.regex.Pattern;
  * Service to fetch Instagram posts during site generation.
  * 
  * Uses the following fallback chain:
- * 1. Instagram Graph API (if credentials configured)
- * 2. Headless browser scraping via Playwright (if no API credentials)
- * 3. Existing instagram.json file (if all else fails)
+ * 1. RSS Bridge (no authentication required, simple HTTP request)
+ * 2. Instagram Graph API (if credentials configured)
+ * 3. Headless browser scraping via Playwright (if no API credentials)
+ * 4. Existing instagram.json file (if all else fails)
  * 
+ * @see <a href="https://rss-bridge.org/">RSS Bridge</a>
  * @see <a href="https://developers.facebook.com/docs/instagram-api/">Instagram Graph API Documentation</a>
  */
 @Startup
@@ -48,6 +50,9 @@ import java.util.regex.Pattern;
 public class InstagramPostsFetcher {
 
     private static final Logger LOG = Logger.getLogger(InstagramPostsFetcher.class);
+    
+    // RSS Bridge URL for fetching Instagram posts without authentication
+    private static final String RSS_BRIDGE_URL = "https://rss-bridge.org/bridge01/?action=display&bridge=InstagramBridge&context=Username&u=%s&media_type=all&direct_links=on&format=Json";
     
     // Instagram Graph API endpoints
     private static final String GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
@@ -103,7 +108,20 @@ public class InstagramPostsFetcher {
         List<String> existingPosts = readExistingPosts();
         List<String> fetchedUrls = null;
         
-        // Try Graph API first if credentials are configured
+        // Try RSS Bridge first (no authentication required)
+        LOG.info("Fetching Instagram posts via RSS Bridge...");
+        try {
+            fetchedUrls = fetchInstagramPostsViaRssBridge();
+            if (!fetchedUrls.isEmpty()) {
+                writePostsToFile(fetchedUrls);
+                LOG.infof("Successfully fetched %d Instagram posts via RSS Bridge", fetchedUrls.size());
+                return;
+            }
+        } catch (Exception e) {
+            LOG.warnf("RSS Bridge failed: %s. Trying other methods...", e.getMessage());
+        }
+        
+        // Try Graph API if credentials are configured
         if (hasGraphApiCredentials()) {
             LOG.info("Fetching Instagram posts via Graph API");
             try {
@@ -146,6 +164,64 @@ public class InstagramPostsFetcher {
     private boolean hasGraphApiCredentials() {
         return accessToken.isPresent() && !accessToken.get().isBlank() 
                 && accountId.isPresent() && !accountId.get().isBlank();
+    }
+
+    /**
+     * Fetches Instagram posts using RSS Bridge.
+     * This is the simplest method - no authentication required, just a simple HTTP request.
+     * Uses rss-bridge.org to get Instagram feed as JSON.
+     */
+    List<String> fetchInstagramPostsViaRssBridge() throws IOException, InterruptedException {
+        String rssBridgeUrl = String.format(RSS_BRIDGE_URL, URLEncoder.encode(instagramUsername, StandardCharsets.UTF_8));
+        
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(rssBridgeUrl))
+                .header("Accept", "application/json")
+                .header("User-Agent", "Mozilla/5.0 (compatible; TC11SiteBot/1.0)")
+                .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        
+        if (response.statusCode() != 200) {
+            throw new IOException("RSS Bridge returned status " + response.statusCode());
+        }
+
+        return parseRssBridgeResponse(response.body());
+    }
+
+    /**
+     * Parses the RSS Bridge JSON response and extracts post URLs.
+     * The response follows the JSON Feed format with items containing 'url' or 'id' fields.
+     */
+    List<String> parseRssBridgeResponse(String jsonResponse) {
+        List<String> postUrls = new ArrayList<>();
+        
+        try {
+            JsonNode root = objectMapper.readTree(jsonResponse);
+            JsonNode items = root.path("items");
+            
+            if (items.isArray()) {
+                for (JsonNode item : items) {
+                    if (postUrls.size() >= MAX_POSTS) break;
+                    
+                    // Try 'url' field first, then 'id'
+                    String url = item.path("url").asText();
+                    if (url == null || url.isEmpty()) {
+                        url = item.path("id").asText();
+                    }
+                    
+                    if (url != null && !url.isEmpty() && url.contains("instagram.com/p/")) {
+                        postUrls.add(url);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.warnf("Failed to parse RSS Bridge response: %s", e.getMessage());
+        }
+        
+        return postUrls;
     }
 
     /**
@@ -342,5 +418,12 @@ public class InstagramPostsFetcher {
      */
     List<String> testExtractPostUrlsFromHtml(String html) {
         return extractPostUrlsFromHtml(html);
+    }
+    
+    /**
+     * For testing: parse RSS Bridge response.
+     */
+    List<String> testParseRssBridgeResponse(String jsonResponse) {
+        return parseRssBridgeResponse(jsonResponse);
     }
 }
